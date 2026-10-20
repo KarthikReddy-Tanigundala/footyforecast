@@ -16,6 +16,7 @@ Run ``python -m footyforecast.io`` to rebuild ``data/processed/*.parquet``.
 
 from __future__ import annotations
 
+import json
 import logging
 from functools import cache
 
@@ -279,6 +280,140 @@ def build_bookmaker(odds: pd.DataFrame, matches: pd.DataFrame) -> pd.DataFrame:
     ]
 
 
+# ---- Player stats (Fryzigg 2012–2025 + AFL source 2025+) -------------------------------------------
+PLAYER_STATS = [
+    "rating_points",
+    "contested_possessions",
+    "clearances",
+    "inside_fifties",
+    "metres_gained",
+    "intercepts",
+    "tackles",
+]
+
+
+def _std_fryzigg(raw: pd.DataFrame) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "season": raw["season"].astype(int),
+            "date": pd.to_datetime(raw["match_date"]),
+            "home_team": canonical_team(raw["match_home_team"]),
+            "away_team": canonical_team(raw["match_away_team"]),
+            "team": canonical_team(raw["player_team"]),
+            "player_key": "FZ" + raw["player_id"].astype(int).astype(str),
+            "player_name": raw["player_first_name"].str.strip()
+            + " "
+            + raw["player_last_name"].str.strip(),
+            "position": raw["player_position"],
+            "time_on_ground": pd.to_numeric(raw["time_on_ground_percentage"], errors="coerce"),
+            **{s: pd.to_numeric(raw[s], errors="coerce") for s in PLAYER_STATS},
+            "source": "fryzigg",
+        }
+    )
+
+
+def _std_afl(raw: pd.DataFrame) -> pd.DataFrame:
+    local = pd.to_datetime(raw["utcStartTime"], utc=True).dt.tz_convert("Australia/Melbourne")
+    return pd.DataFrame(
+        {
+            "season": raw["season"].astype(int),
+            "date": local.dt.tz_localize(None).dt.normalize(),
+            "home_team": canonical_team(raw["home.team.name"]),
+            "away_team": canonical_team(raw["away.team.name"]),
+            "team": canonical_team(raw["team.name"]),
+            "player_key": "AFL" + raw["player.player.player.playerId"].astype(str),
+            "player_name": raw["player.player.player.givenName"].str.strip()
+            + " "
+            + raw["player.player.player.surname"].str.strip(),
+            "position": raw.get("player.player.position", pd.Series(pd.NA, index=raw.index)),
+            "time_on_ground": pd.to_numeric(raw["timeOnGroundPercentage"], errors="coerce"),
+            "rating_points": pd.to_numeric(raw["ratingPoints"], errors="coerce"),
+            "contested_possessions": pd.to_numeric(raw["contestedPossessions"], errors="coerce"),
+            "clearances": pd.to_numeric(raw["clearances.totalClearances"], errors="coerce"),
+            "inside_fifties": pd.to_numeric(raw["inside50s"], errors="coerce"),
+            "metres_gained": pd.to_numeric(raw["metresGained"], errors="coerce"),
+            "intercepts": pd.to_numeric(raw["intercepts"], errors="coerce"),
+            "tackles": pd.to_numeric(raw["tackles"], errors="coerce"),
+            "source": "afl",
+        }
+    )
+
+
+def build_player_games(
+    fryzigg: pd.DataFrame, afl: pd.DataFrame | None, matches: pd.DataFrame
+) -> tuple[pd.DataFrame, dict[str, float]]:
+    """One row per player per game, keyed to our game_id, with one player id across sources.
+
+    Fryzigg is the primary source (2012–2025) and the AFL source fills later seasons. Both
+    cover 2025, which is used to (a) check the two sources agree and (b) map AFL player
+    ids onto Fryzigg ids, so a 2026 player's rating history continues from 2025.
+    """
+    fz = _std_fryzigg(fryzigg)
+    check: dict[str, float] = {}
+    if afl is None or afl.empty:
+        combined = fz
+    else:
+        af = _std_afl(afl)
+        overlap = sorted(set(fz["season"]) & set(af["season"]))
+        keys = ["date", "team", "player_name"]
+        both = fz[fz["season"].isin(overlap)].merge(
+            af[af["season"].isin(overlap)], on=keys, suffixes=("_fz", "_afl")
+        )
+        n_afl_overlap = int(af["season"].isin(overlap).sum())
+        check = {
+            "overlap_seasons": overlap,
+            "afl_rows_matched": len(both) / max(n_afl_overlap, 1),
+            "rating_points_agree": float(
+                (both["rating_points_fz"] - both["rating_points_afl"]).abs().lt(0.05).mean()
+            ),
+            "metres_gained_agree": float(
+                (both["metres_gained_fz"] - both["metres_gained_afl"]).abs().lt(0.5).mean()
+            ),
+        }
+        id_map = both.drop_duplicates("player_key_afl").set_index("player_key_afl")["player_key_fz"]
+        later = af[~af["season"].isin(fz["season"].unique())].copy()
+        later["player_key"] = later["player_key"].map(id_map).fillna(later["player_key"])
+        check["later_players_mapped"] = (
+            float(later["player_key"].str.startswith("FZ").mean()) if len(later) else 1.0
+        )
+        combined = pd.concat([fz, later], ignore_index=True)
+
+    linked = link_games(combined, matches, "home_team", "away_team")
+    unlinked = len(combined) - len(linked)
+    if unlinked:
+        logger.warning("%d player rows not linked to a game", unlinked)
+    cols = [
+        "game_id",
+        "season",
+        "date",
+        "team",
+        "player_key",
+        "player_name",
+        "position",
+        "time_on_ground",
+        *PLAYER_STATS,
+        "source",
+    ]
+    out = linked[cols].rename(columns={"player_key": "player_id"})
+    return out.sort_values(["date", "game_id", "team", "player_id"]).reset_index(drop=True), check
+
+
+def build_team_games(player_games: pd.DataFrame) -> pd.DataFrame:
+    """Team totals per game plus each stat's for − against (the dominance the form features roll)."""
+    stats = [s for s in PLAYER_STATS]
+    tg = player_games.groupby(["game_id", "season", "date", "team"], as_index=False)[stats].sum(
+        min_count=1
+    )
+    opp = tg[["game_id", "team", *stats]].rename(
+        columns={"team": "opponent", **{s: f"{s}_against" for s in stats}}
+    )
+    tg = tg.merge(opp, on="game_id")
+    tg = tg[tg["team"] != tg["opponent"]].copy()
+    for s in stats:
+        tg[f"{s}_diff"] = tg[s] - tg[f"{s}_against"]
+    return tg.sort_values(["date", "game_id", "team"]).reset_index(drop=True)
+
+
 # ---- Processed loaders ---------------------------------------------------------------------
 def _processed(name: str) -> pd.DataFrame:
     path = config.DATA_PROCESSED / f"{name}.parquet"
@@ -301,8 +436,20 @@ def load_bookmaker() -> pd.DataFrame:
     return _processed("bookmaker_footywire")
 
 
+def load_player_games() -> pd.DataFrame:
+    return _processed("player_games")
+
+
+def load_team_games() -> pd.DataFrame:
+    return _processed("team_games")
+
+
 def build_all() -> dict[str, pd.DataFrame]:
-    """Rebuild every processed table from data/raw and write it to data/processed."""
+    """Rebuild every processed table from data/raw and write it to data/processed.
+
+    Player-level raw extracts are large and gitignored. Without them (e.g. in CI) the
+    committed player_games/team_games tables are kept as they are.
+    """
     sq_games = _read_raw("squiggle_games")
     matches = build_matches(_read_raw("results"), sq_games)
     tables = {
@@ -310,6 +457,22 @@ def build_all() -> dict[str, pd.DataFrame]:
         "squiggle_tips": build_squiggle_tips(_read_raw("squiggle_tips"), matches),
         "bookmaker_footywire": build_bookmaker(_read_raw("odds"), matches),
     }
+    if (config.DATA_RAW / "player_stats_fryzigg.parquet").exists():
+        afl = (
+            _read_raw("player_stats_afl")
+            if (config.DATA_RAW / "player_stats_afl.parquet").exists()
+            else None
+        )
+        player_games, check = build_player_games(_read_raw("player_stats_fryzigg"), afl, matches)
+        tables["player_games"] = player_games
+        tables["team_games"] = build_team_games(player_games)
+        if check:
+            logger.info("Fryzigg vs AFL source on the overlap: %s", check)
+            (config.DATA_PROCESSED / "player_source_check.json").write_text(
+                json.dumps(check, indent=2), encoding="utf-8"
+            )
+    else:
+        logger.info("No raw player stats: keeping the committed player_games/team_games tables")
     config.DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
     for name, df in tables.items():
         df.to_parquet(config.DATA_PROCESSED / f"{name}.parquet", index=False)

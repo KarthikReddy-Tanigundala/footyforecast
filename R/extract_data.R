@@ -28,6 +28,9 @@ MANIFEST        <- file.path(RAW_DIR, "_manifest.json")
 RESULTS_FROM    <- 1990L   # Elo warm-up starts here
 ODDS_FROM       <- 2010L   # Footywire odds history starts in 2010
 SQUIGGLE_FROM   <- 2015L   # earliest year to probe for Squiggle tips/games
+PLAYERS_FROM    <- 2012L   # Fryzigg advanced player stats start in 2012
+AFL_PLAYERS_FROM <- 2025L  # Fryzigg has no 2026 data, so the AFL source covers 2025+
+                           # (2025 is pulled from both so the two sources can be checked against each other)
 THIS_YEAR       <- as.integer(format(Sys.Date(), "%Y"))
 SEASON_LIVE     <- as.integer(format(Sys.Date(), "%m")) %in% 3:9   # Mar–Sep
 LAST_SEASON     <- if (SEASON_LIVE) THIS_YEAR else THIS_YEAR - (as.integer(format(Sys.Date(), "%m")) < 3)
@@ -37,7 +40,10 @@ args        <- commandArgs(trailingOnly = TRUE)
 REFRESH     <- "--refresh" %in% args
 INCREMENTAL <- "--incremental" %in% args
 only_arg    <- sub("^--only=", "", grep("^--only=", args, value = TRUE))
-ALL_TARGETS <- c("results", "odds", "squiggle_sources", "squiggle_tips", "squiggle_games", "fixture")
+ALL_TARGETS <- c(
+  "results", "odds", "squiggle_sources", "squiggle_tips", "squiggle_games", "fixture",
+  "player_stats_fryzigg", "player_stats_afl"
+)
 TARGETS     <- if (length(only_arg)) strsplit(only_arg, ",")[[1]] else ALL_TARGETS
 REQUIRED    <- c("results")     # a failure here fails the run (CI notices)
 
@@ -92,6 +98,22 @@ squiggle_years <- function(query, years) {
   bind_rows(frames)
 }
 
+# Player stats are pulled one season at a time so a single bad season can't sink the rest.
+# A `season` column is added so incremental runs can replace one season in place.
+player_seasons <- function(fetch, seasons, date_col) {
+  frames <- lapply(seasons, function(s) {
+    out <- tryCatch(suppressMessages(fetch(s)), error = function(e) {
+      log_line("  player stats %d: %s", s, conditionMessage(e)); NULL
+    })
+    Sys.sleep(1)
+    if (is.null(out) || !nrow(out)) { log_line("  player stats %d: no rows", s); return(NULL) }
+    out <- flatten_df(out)
+    out$season <- as.integer(substr(as.character(out[[date_col]]), 1, 4))
+    out
+  })
+  bind_rows(frames)
+}
+
 # ---- Pulls -----------------------------------------------------------------------
 pull <- list(
   results = function(seasons) fitzRoy::fetch_results_afltables(seasons),
@@ -99,7 +121,9 @@ pull <- list(
   squiggle_sources = function(seasons) fitzRoy::fetch_squiggle_data("sources", user_agent = UA),
   squiggle_tips = function(seasons) squiggle_years("tips", seasons),
   squiggle_games = function(seasons) squiggle_years("games", seasons),
-  fixture = function(seasons) fitzRoy::fetch_fixture(max(seasons), source = "AFL")
+  fixture = function(seasons) fitzRoy::fetch_fixture(max(seasons), source = "AFL"),
+  player_stats_fryzigg = function(seasons) player_seasons(fitzRoy::fetch_player_stats_fryzigg, seasons, "match_date"),
+  player_stats_afl = function(seasons) player_seasons(fitzRoy::fetch_player_stats_afl, seasons, "utcStartTime")
 )
 
 full_window <- list(
@@ -108,13 +132,19 @@ full_window <- list(
   squiggle_sources = NA,
   squiggle_tips = SQUIGGLE_FROM:LAST_SEASON,
   squiggle_games = SQUIGGLE_FROM:NEXT_SEASON,   # includes next season's fixture once published
-  fixture = NEXT_SEASON
+  fixture = NEXT_SEASON,
+  player_stats_fryzigg = PLAYERS_FROM:LAST_SEASON,
+  player_stats_afl = AFL_PLAYERS_FROM:LAST_SEASON
 )
 incremental_window <- list(
   results = LAST_SEASON, odds = LAST_SEASON, squiggle_sources = NA,
-  squiggle_tips = LAST_SEASON, squiggle_games = unique(c(LAST_SEASON, NEXT_SEASON)), fixture = NEXT_SEASON
+  squiggle_tips = LAST_SEASON, squiggle_games = unique(c(LAST_SEASON, NEXT_SEASON)), fixture = NEXT_SEASON,
+  player_stats_fryzigg = LAST_SEASON, player_stats_afl = LAST_SEASON
 )
-season_col <- list(results = "Season", odds = "Season", squiggle_tips = "year", squiggle_games = "year")
+season_col <- list(
+  results = "Season", odds = "Season", squiggle_tips = "year", squiggle_games = "year",
+  player_stats_fryzigg = "season", player_stats_afl = "season"
+)
 
 manifest <- if (file.exists(MANIFEST)) jsonlite::read_json(MANIFEST) else list(targets = list())
 failed_required <- FALSE

@@ -35,11 +35,9 @@ def latest_feed() -> dict:
 
 
 @st.cache_data(show_spinner=False)
-def calibration_tables(n_bins: int = 10) -> dict[str, pd.DataFrame]:
-    games = backtest_games().dropna(subset=["outcome"])
-    out = {
-        "FootyForecast Elo": metrics.calibration_table(games["p_home"], games["outcome"], n_bins)
-    }
+def calibration_tables(ours: str, n_bins: int = 10) -> dict[str, pd.DataFrame]:
+    games = backtest_games().dropna(subset=["outcome", "p_ours"])
+    out = {ours: metrics.calibration_table(games["p_ours"], games["outcome"], n_bins)}
     market = games.dropna(subset=["p_punters"])
     out["Punters"] = metrics.calibration_table(market["p_punters"], market["outcome"], n_bins)
     return out

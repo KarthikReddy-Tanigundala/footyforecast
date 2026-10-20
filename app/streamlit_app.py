@@ -1,4 +1,4 @@
-"""FootyForecast dashboard (MVP): This Round · Model vs The Field.
+"""FootyForecast dashboard: This Round · Model vs The Field.
 
 Run locally:  streamlit run app/streamlit_app.py
 Everything shown is read from committed artefacts (results/, predictions/), so the app
@@ -33,13 +33,14 @@ games = data.backtest_games()
 feed = data.latest_feed()
 pooled = pd.DataFrame(summary["pooled"]).set_index("model")
 by_season = pd.DataFrame(summary["by_season"])
-OURS = "FootyForecast Elo"
+OURS = summary.get("headline", "FootyForecast Elo")
 seasons = summary["eval_seasons"]
 
 st.title("🏉 FootyForecast")
 st.markdown(
-    '<p class="ff-sub">AFL win probabilities and margins from an Elo system built from scratch, '
-    "scored against the betting market and Squiggle's public models on Squiggle's own metrics.</p>",
+    '<p class="ff-sub">AFL win probabilities and margins from a from-scratch Elo system and a '
+    "pre-match feature model (form, selection strength, travel), scored walk-forward against the "
+    "betting market and Squiggle's public models on Squiggle's own metrics.</p>",
     unsafe_allow_html=True,
 )
 
@@ -129,13 +130,13 @@ with tab_round:
     rnd = c2.selectbox("Round", round_order, index=len(round_order) - 1)
     rg = sg[sg["round_name"] == rnd].sort_values("kickoff")
 
-    ff_correct = np.where(rg["outcome"] == 0.5, True, (rg["p_home"] >= 0.5) == (rg["outcome"] == 1))
+    ff_correct = np.where(rg["outcome"] == 0.5, True, (rg["p_ours"] >= 0.5) == (rg["outcome"] == 1))
     mk_correct = np.where(
         rg["outcome"] == 0.5, True, (rg["p_punters"] >= 0.5) == (rg["outcome"] == 1)
     )
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("FootyForecast tips", f"{int(ff_correct.sum())} / {len(rg)}")
-    m2.metric("FootyForecast bits", f"{metrics.bits(rg['p_home'], rg['outcome']).sum():.2f}")
+    m2.metric("FootyForecast bits", f"{metrics.bits(rg['p_ours'], rg['outcome']).sum():.2f}")
     m3.metric("Market tips", f"{int(mk_correct.sum())} / {len(rg)}")
     m4.metric("Market bits", f"{metrics.bits(rg['p_punters'], rg['outcome']).sum():.2f}")
 
@@ -146,11 +147,11 @@ with tab_round:
             "Venue": rg["venue"],
             "FootyForecast": [
                 tip_text(p, h, a)
-                for p, h, a in zip(rg["p_home"], rg["home_team"], rg["away_team"], strict=True)
+                for p, h, a in zip(rg["p_ours"], rg["home_team"], rg["away_team"], strict=True)
             ],
             "Predicted margin": [
                 f"{(h if m >= 0 else a)} by {abs(m):.0f}"
-                for m, h, a in zip(rg["pred_margin"], rg["home_team"], rg["away_team"], strict=True)
+                for m, h, a in zip(rg["m_ours"], rg["home_team"], rg["away_team"], strict=True)
             ],
             "Market": [
                 tip_text(p, h, a) if pd.notna(p) else "–"
@@ -179,8 +180,9 @@ with tab_field:
     n_seasons = len(seasons)
     st.markdown(
         f"Walk-forward backtest over **{seasons[0]}–{seasons[-1]}** ({summary['games']:,} games). "
-        "Before each season the Elo settings were re-tuned on the previous ten seasons only, "
-        "the same thing the live model does every pre-season."
+        f"Shipped model: **{OURS}**. Every tip was made before its round with models refit on "
+        "earlier games only; model choices were made on 2014–2016 warm-up seasons, never on the "
+        "seasons scored here."
     )
     t1, t2, t3, t4 = st.columns(4)
     t1.metric(
@@ -206,7 +208,7 @@ with tab_field:
         help="Share of Squiggle's published per-tip bits that our metrics code reproduces to within 0.01.",
     )
 
-    st.plotly_chart(charts.bits_by_season(by_season), width="stretch")
+    st.plotly_chart(charts.bits_by_season(by_season, OURS), width="stretch")
 
     st.subheader("Leaderboard: models that tipped every game")
     full = (
@@ -236,18 +238,69 @@ with tab_field:
         },
     )
     st.caption(
-        "Honest read: a scores-only Elo is a solid, explainable baseline (it beat most public models "
-        "in 2019) but the market and the best public models are ahead, especially since 2022. Phase 2 "
-        "adds team-selection and player-rating features plus probability calibration to close that gap."
+        "Honest read: the shipped model beats the Phase 1 Elo by about 20 bits and climbs to "
+        "mid-table on Squiggle's recent leaderboards, but most of that gain comes from calibration, "
+        "and the betting market and the Squiggle Aggregate remain clearly ahead (see below)."
     )
+
+    with st.expander("Which model ships, and is the difference real?", expanded=True):
+        cands = pooled.loc[[c for c in summary["candidates"] if c in pooled.index]]
+        st.dataframe(
+            cands.reset_index()[["model", "bits", "accuracy", "mae", "brier", "ece"]]
+            .sort_values("bits", ascending=False)
+            .rename(
+                columns={
+                    "model": "Candidate",
+                    "bits": "Bits",
+                    "accuracy": "Accuracy",
+                    "mae": "MAE",
+                    "brier": "Brier",
+                    "ece": "ECE",
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Accuracy": st.column_config.NumberColumn(format="percent"),
+                "Bits": st.column_config.NumberColumn(format="%.1f"),
+                "MAE": st.column_config.NumberColumn(format="%.2f"),
+                "Brier": st.column_config.NumberColumn(format="%.4f"),
+                "ECE": st.column_config.NumberColumn(format="%.3f"),
+            },
+        )
+        sig = pd.DataFrame(summary.get("significance", []))
+        if len(sig):
+            st.markdown(
+                "Paired bootstrap over rounds (2,000 resamples). An interval that crosses zero "
+                "means the gap could be luck."
+            )
+            st.dataframe(
+                sig.assign(
+                    Interval=sig.apply(
+                        lambda r: f"[{r['ci_low']:+.1f}, {r['ci_high']:+.1f}]", axis=1
+                    )
+                )[["b", "bits_diff", "Interval", "p_a_ahead"]].rename(
+                    columns={
+                        "b": "Shipped vs",
+                        "bits_diff": "Δ bits",
+                        "p_a_ahead": "Shipped ahead in",
+                    }
+                ),
+                hide_index=True,
+                width="stretch",
+                column_config={
+                    "Δ bits": st.column_config.NumberColumn(format="%+.1f"),
+                    "Shipped ahead in": st.column_config.NumberColumn(format="percent"),
+                },
+            )
 
     left, right = st.columns(2)
     with left:
-        st.plotly_chart(charts.reliability(data.calibration_tables()), width="stretch")
+        st.plotly_chart(charts.reliability(data.calibration_tables(OURS), OURS), width="stretch")
         st.caption(
-            "Below the diagonal on the left and above it on the right means favourites won more "
-            "often than predicted: the model is under-confident at the extremes, which the Phase 2 "
-            "calibration layer targets. Bins with fewer than 10 games are hidden."
+            "Points on the diagonal mean the stated probabilities can be taken at face value. The "
+            "raw Elo was under-confident at the extremes; walk-forward Platt scaling fixed that "
+            "(ECE 0.040 → 0.020). Bins with fewer than 10 games are hidden."
         )
     with right:
         ranks = pd.DataFrame(summary["season_ranks"])

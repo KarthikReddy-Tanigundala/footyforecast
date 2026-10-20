@@ -59,9 +59,33 @@
     },
     "fixture": {
       "last_status": "failed_or_empty"
+    },
+    "player_stats_fryzigg": {
+      "file": "player_stats_fryzigg.parquet",
+      "rows": 128800,
+      "columns": 82,
+      "seasons": [
+        2012,
+        2025
+      ],
+      "pulled_at": "2026-10-20T15:38:44+1100",
+      "mode": "full",
+      "last_status": "ok"
+    },
+    "player_stats_afl": {
+      "file": "player_stats_afl.parquet",
+      "rows": 19964,
+      "columns": 96,
+      "seasons": [
+        2025,
+        2026
+      ],
+      "pulled_at": "2026-10-20T15:39:36+1100",
+      "mode": "full",
+      "last_status": "ok"
     }
   },
   "fitzroy_version": "1.8.0",
   "r_version": "R version 4.5.0 (2025-04-11 ucrt)",
-  "generated_at": "2026-10-20T15:04:38+1100"
+  "generated_at": "2026-10-20T15:39:36+1100"
 }

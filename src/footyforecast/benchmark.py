@@ -36,8 +36,13 @@ def home_baseline(
     )
 
 
-def _standings(games: pd.DataFrame, teams: list[str], tiebreak: dict[str, int]) -> dict[str, int]:
-    """Ladder rank (1 = top) from completed games: 4 points a win, 2 a draw, then percentage."""
+def _standings(
+    games: pd.DataFrame, teams: list[str], tiebreak: dict[str, int]
+) -> tuple[dict[str, int], dict[str, float]]:
+    """Ladder rank (1 = top) and percentage (points for / against × 100) from completed games.
+
+    Ranking: 4 points a win, 2 a draw, then percentage, then the tiebreak (last year's rank).
+    """
     rows = {t: [0, 0.0, 0.0] for t in teams}  # points, points for, points against
     for g in games.itertuples():
         h, a = rows[g.home_team], rows[g.away_team]
@@ -52,44 +57,44 @@ def _standings(games: pd.DataFrame, teams: list[str], tiebreak: dict[str, int]) 
         else:
             h[0] += 2
             a[0] += 2
-    order = sorted(
-        teams,
-        key=lambda t: (
-            -rows[t][0],
-            -(rows[t][1] / rows[t][2] if rows[t][2] else 0.0),
-            tiebreak.get(t, 99),
-        ),
-    )
-    return {t: i + 1 for i, t in enumerate(order)}
+    pct = {t: 100 * rows[t][1] / rows[t][2] if rows[t][2] else np.nan for t in teams}
+    order = sorted(teams, key=lambda t: (-rows[t][0], -np.nan_to_num(pct[t]), tiebreak.get(t, 99)))
+    return {t: i + 1 for i, t in enumerate(order)}, pct
 
 
 def ladder_before_match(matches: pd.DataFrame) -> pd.DataFrame:
-    """Each side's ladder position as it stood before its round started (no leakage)."""
+    """Each side's ladder position and percentage as they stood before its round started.
+
+    In round 1 (no games yet) the previous season's final home-and-away ladder is used.
+    """
     out = []
-    prev_final: dict[str, int] = {}
+    prev_rank: dict[str, int] = {}
+    prev_pct: dict[str, float] = {}
     for _, sm in matches.groupby("season", sort=True):
         teams = sorted(set(sm["home_team"]) | set(sm["away_team"]))
         played = sm.dropna(subset=["margin"])
         first_day = sm.groupby("round_label")["date"].transform("min")
         for cutoff, games in sm.groupby(first_day, sort=True):
             before = played[played["date"] < cutoff]
-            ranks = (
-                _standings(before, teams, prev_final)
-                if len(before)
-                else {t: prev_final.get(t, 99) for t in teams}
-            )
+            if len(before):
+                ranks, pct = _standings(before, teams, prev_rank)
+            else:
+                ranks = {t: prev_rank.get(t, 99) for t in teams}
+                pct = {t: prev_pct.get(t, np.nan) for t in teams}
             out.append(
                 pd.DataFrame(
                     {
                         "game_id": games["game_id"],
                         "home_rank": games["home_team"].map(ranks),
                         "away_rank": games["away_team"].map(ranks),
+                        "home_pct": games["home_team"].map(pct),
+                        "away_pct": games["away_team"].map(pct),
                     }
                 )
             )
         home_and_away = played[~played["is_final"]]
         if len(home_and_away):
-            prev_final = _standings(home_and_away, teams, prev_final)
+            prev_rank, prev_pct = _standings(home_and_away, teams, prev_rank)
     return pd.concat(out, ignore_index=True)
 
 

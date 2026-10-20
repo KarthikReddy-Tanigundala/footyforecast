@@ -8,20 +8,23 @@
       refresh    in-season incremental extract (current season only)
       build      normalise raw extracts -> data/processed/matches.parquet
       tune       grid-search Elo on 2000-2016 + walk-forward re-tuning per season
+      features   pre-match feature table -> data/processed/features.parquet
+      ml         walk-forward ML predictions 2014-2026 (add -Tune to re-tune on 2014-2016 first)
       backtest   walk-forward 2017-2026 -> results/leaderboard.md
       predict    next-round predictions + predictions/latest.json
       app        run the Streamlit dashboard
       test       pytest
       lint       ruff check + format check
       report     render the R home-ground-advantage report (Quarto)
-      all        build -> backtest -> predict
+      all        build -> features -> backtest -> predict
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('setup', 'r-setup', 'extract', 'refresh', 'build', 'tune', 'backtest', 'predict',
+    [ValidateSet('setup', 'r-setup', 'extract', 'refresh', 'build', 'tune', 'features', 'ml', 'backtest', 'predict',
                  'app', 'test', 'lint', 'report', 'all')]
     [string]$Target = 'all',
-    [switch]$Refresh
+    [switch]$Refresh,
+    [switch]$Tune
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,11 +64,13 @@ switch ($Target) {
     'refresh'  { Invoke-Checked (& $Rscript) @('R/extract_data.R', '--incremental') }
     'build'    { Invoke-Checked $Py @('-m', 'footyforecast.io') }
     'tune'     { foreach ($m in 'flat', 'venue', 'walkforward') { Invoke-Checked $Py @('-m', 'footyforecast.elo', '--mode', $m) } }
+    'features' { Invoke-Checked $Py @('-m', 'footyforecast.features') }
+    'ml'       { $a = @('-m', 'footyforecast.model_match'); if ($Tune) { $a += '--tune' }; Invoke-Checked $Py $a }
     'backtest' { Invoke-Checked $Py @('-m', 'footyforecast.evaluation.backtest') }
     'predict'  { Invoke-Checked $Py @('-m', 'footyforecast.predict') }
     'app'      { Invoke-Checked $Py @('-m', 'streamlit', 'run', 'app/streamlit_app.py') }
     'test'     { Invoke-Checked $Py @('-m', 'pytest') }
     'lint'     { Invoke-Checked $Py @('-m', 'ruff', 'check', '.'); Invoke-Checked $Py @('-m', 'ruff', 'format', '--check', '.') }
     'report'   { Invoke-Checked (& $Quarto) @('render', 'R/reports/home_ground_advantage.qmd', '--output-dir', '../../results') }
-    'all'      { foreach ($t in 'build', 'backtest', 'predict') { & $PSCommandPath $t } }
+    'all'      { foreach ($t in 'build', 'features', 'backtest', 'predict') { & $PSCommandPath $t } }
 }

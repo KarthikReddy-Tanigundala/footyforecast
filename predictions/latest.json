@@ -1,7 +1,7 @@
 {
-  "model": "FootyForecast Elo",
+  "model": "FootyForecast ML (logistic + Platt)",
   "version": "0.1.0",
-  "generated_at": "2026-10-20T04:22:35+00:00",
+  "generated_at": "2026-10-20T04:57:31+00:00",
   "status": "off-season",
   "last_result": {
     "season": 2026,

@@ -24,7 +24,12 @@ BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
 RED = "#e34948"  # diverging negative pole (below-average ratings)
 GOOD, CRITICAL = "#0ca30c", "#d03b3b"  # status: always paired with an icon + label
 
-MODEL_COLORS = {"FootyForecast Elo": BLUE, "Punters": ORANGE, "Aggregate": AQUA}
+
+def model_colors(ours: str) -> dict[str, str]:
+    """Fixed colour per role: our shipped model blue, the market orange, the crowd aqua."""
+    return {ours: BLUE, "Punters": ORANGE, "Aggregate": AQUA}
+
+
 FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
 
@@ -50,10 +55,10 @@ def _base(fig: go.Figure, title: str | None = None, height: int = 380) -> go.Fig
     return fig
 
 
-def bits_by_season(by_season: pd.DataFrame) -> go.Figure:
+def bits_by_season(by_season: pd.DataFrame, ours: str) -> go.Figure:
     """Line: bits each season for FootyForecast vs the market vs the crowd (one y-axis)."""
     fig = go.Figure()
-    for model, color in MODEL_COLORS.items():
+    for model, color in model_colors(ours).items():
         d = by_season[by_season["model"] == model].sort_values("season")
         if d.empty:
             continue
@@ -81,7 +86,7 @@ def bits_by_season(by_season: pd.DataFrame) -> go.Figure:
     return _base(fig, "Bits per season: FootyForecast vs the market and the crowd")
 
 
-def reliability(cal: dict[str, pd.DataFrame]) -> go.Figure:
+def reliability(cal: dict[str, pd.DataFrame], ours: str) -> go.Figure:
     """Reliability diagram: predicted vs observed home-win rate, with the perfect-calibration diagonal."""
     fig = go.Figure()
     fig.add_trace(
@@ -93,7 +98,7 @@ def reliability(cal: dict[str, pd.DataFrame]) -> go.Figure:
     for model, table in cal.items():
         t = table.dropna(subset=["mean_predicted"])
         t = t[t["n"] >= 10]
-        color = MODEL_COLORS.get(model, MUTED)
+        color = model_colors(ours).get(model, MUTED)
         fig.add_trace(
             go.Scatter(
                 x=t["mean_predicted"],

@@ -761,3 +761,21 @@ Behind all five external sources that tipped every game: Punters (34.2 bits/seas
 Stats, Aggregate, Squiggle and Graft. Ahead of both ablations and both naive baselines. 2nd of 18
 on Squiggle's 2019 bits table, but in the bottom quartile 2022–2026. Elo is under-confident at the
 extremes (reliability diagram). Phase 2 (team-selection/player-rating features + calibration) targets this.
+
+### 17.1 Phase 2 decisions (2026-10-20)
+
+| # | Decision | Why |
+|---|---|---|
+| 14 | **Fryzigg has no 2026 data** → AFL-source player stats (`fetch_player_stats_afl`) fill 2025–26; Fryzigg stays primary for 2012–2025 | On the 2025 overlap: 99.8% of rows match, rating points agree 99.6%, metres gained 95.8%; AFL ids mapped onto Fryzigg ids (89% of 2026 player-games continue a history; most of the rest are debutants) |
+| 15 | Features are attached **as-of** the round cutoff (`merge_asof`, strict `<`); perturbation test scrambles all results/stats after a date | The test caught a real leak: the debutant-rating fill was a global mean incl. future debuts → now an expanding as-of mean |
+| 16 | ML trains on games **played** before the cutoff (not "earlier rounds") | The fold guard caught postponed games leaking in |
+| 17 | Classifier, its hyperparameters and the margin model are chosen on **2014–2016 warm-up OOS predictions** only | Logistic (C=0.1) beat XGBoost's best (300 stumps) on warm-up log loss 0.558 vs 0.571 → logistic is the ML candidate, XGBoost an ablation; ridge (α=100) beat the XGBoost regressor on warm-up MAE 29.3 vs 30.0 |
+| 18 | Calibration = **walk-forward Platt** on the previous 3 seasons' OOS predictions; isotonic kept as ablation | ~600 calibration games; isotonic overfits (−24 bits vs Platt on XGBoost) |
+| 19 | Shipped model = most bits among {Elo, Elo+Platt, ML+Platt} over 2017–26 (rule fixed before running) | Disclosed as a small optimistic bias; 2027 live season is the clean test |
+| 20 | Significance via **round-clustered paired bootstrap** | Games in a round aren't independent |
+
+**Phase-2 result (honest):** shipped = logistic + Platt: 294.3 bits (29.4/season), MAE 26.39 — 5th of the
+full-coverage field (behind Punters, Matter of Stats, Aggregate, Squiggle; ahead of Graft). vs Phase-1 Elo
++19.6 bits [−5.0, +43.8]; vs Elo+Platt +5.6 [−16.9, +28.4] (indistinguishable — most of the gain is
+calibration: Platt alone gives Elo +14 bits). Market still clearly ahead (−48 [−71, −25]).
+2022–26 Squiggle ranks improved from bottom quartile to 10th–14th.

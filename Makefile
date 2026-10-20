@@ -2,7 +2,7 @@
 PY ?= python
 RSCRIPT ?= Rscript
 
-.PHONY: help setup r-setup extract refresh build tune backtest predict app test lint report all
+.PHONY: help setup r-setup extract refresh build tune features ml ml-tune backtest predict app test lint report all
 
 help:      ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-10s %s\n", $$1, $$2}'
@@ -25,6 +25,15 @@ build:     ## Normalise raw extracts -> data/processed
 tune:      ## Grid-search Elo on 2000-2016 + walk-forward re-tuning
 	$(PY) -m footyforecast.elo --mode flat && $(PY) -m footyforecast.elo --mode venue && $(PY) -m footyforecast.elo --mode walkforward
 
+features:  ## Pre-match feature table
+	$(PY) -m footyforecast.features
+
+ml:        ## Walk-forward ML predictions 2014-2026
+	$(PY) -m footyforecast.model_match
+
+ml-tune:   ## Re-tune ML on 2014-2016, then walk-forward
+	$(PY) -m footyforecast.model_match --tune
+
 backtest:  ## Walk-forward 2017-2026 -> results/leaderboard.md
 	$(PY) -m footyforecast.evaluation.backtest
 
@@ -43,4 +52,4 @@ lint:      ## ruff check + format check
 report:    ## Render the R home-ground-advantage report
 	quarto render R/reports/home_ground_advantage.qmd --output-dir ../../results
 
-all: build backtest predict ## Build -> backtest -> predict
+all: build features backtest predict ## Build -> features -> backtest -> predict

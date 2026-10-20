@@ -35,10 +35,13 @@ jobs:
       - name: Rebuild processed tables from committed raw extracts
         run: python -m footyforecast.io
 
+      - name: Rebuild the pre-match feature table
+        run: python -m footyforecast.features
+
       - name: Tests (incl. leakage guards and leaderboard reproducibility)
         run: pytest
 
-      - name: Re-run the walk-forward backtest
+      - name: Re-score the walk-forward backtest (Elo re-run; ML from committed OOS predictions)
         run: python -m footyforecast.evaluation.backtest
 
       - name: Leaderboard unchanged (ignoring the generated date)

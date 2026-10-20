@@ -1,0 +1,24 @@
+{
+  "xgb": {
+    "n_estimators": 300,
+    "max_depth": 1,
+    "learning_rate": 0.03
+  },
+  "logit_C": 0.1,
+  "ridge_alpha": 100.0,
+  "classifier": "logit",
+  "margin_model": "ridge",
+  "warmup_log_loss": {
+    "xgb": 0.5710603665392698,
+    "logit": 0.5576902919708533
+  },
+  "warmup_margin_mae": {
+    "xgb": 29.99138529373994,
+    "ridge": 29.323022156070582
+  },
+  "tuned_on": [
+    2014,
+    2015,
+    2016
+  ]
+}

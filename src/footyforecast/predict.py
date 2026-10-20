@@ -5,6 +5,10 @@ Writes:
     predictions/{season}/round_{label}.csv      an immutable archive of each round's tips
     data/processed/elo_ratings.parquet          current ratings
 
+The probabilities come from whichever model the backtest shipped (results/backtest_results.json
+"headline"): raw Elo, Elo + Platt, or the XGBoost model + Platt. Calibration maps are fitted on
+the last three completed seasons' out-of-sample predictions, exactly as in the backtest.
+
 Out of season (no unplayed games in the fixture) the feed reports ``status: off-season``
 together with the current ratings and next season's pre-season ratings (after the
 between-season regression), so the dashboard still has something true to show.
@@ -21,10 +25,57 @@ import numpy as np
 import pandas as pd
 
 from footyforecast import __version__, config
+from footyforecast.calibration import CAL_WINDOW, fit_platt
 from footyforecast.elo import EloEngine, load_schedule
+from footyforecast.evaluation.backtest import ELO_CAL, ELO_RAW, ML_NAMES
 from footyforecast.io import load_geography, load_matches
 
 logger = logging.getLogger(__name__)
+
+
+def headline_model() -> str:
+    path = config.RESULTS / "backtest_results.json"
+    if not path.exists():
+        return ELO_RAW
+    return json.loads(path.read_text(encoding="utf-8")).get("headline", ELO_RAW)
+
+
+def shipped_predictions(
+    matches: pd.DataFrame, elo: pd.DataFrame, game_ids: set[str], headline: str
+) -> pd.DataFrame:
+    """P(home win) and predicted margin for ``game_ids`` from the shipped model."""
+    elo_sub = elo[elo["game_id"].isin(game_ids)][["game_id", "p_home", "pred_margin"]]
+    if headline == ELO_RAW or not game_ids:
+        return elo_sub
+    decisive = matches[matches["outcome"].isin([0.0, 1.0])]
+    last = int(decisive["season"].max())
+    window = decisive[decisive["season"].between(last - CAL_WINDOW + 1, last)][
+        ["game_id", "outcome"]
+    ]
+    if headline == ELO_CAL:
+        hist = window.merge(elo, on="game_id")
+        mapper = fit_platt(hist["p_home"].to_numpy(), hist["outcome"].to_numpy())
+        return elo_sub.assign(p_home=mapper(elo_sub["p_home"].to_numpy()))
+    if headline in ML_NAMES.values():
+        from footyforecast.features import build_features
+        from footyforecast.io import load_player_games, load_team_games
+        from footyforecast.model_match import OOS_PATH, load_params, walk_forward
+
+        params = load_params()
+        col = f"p_{params.get('classifier', 'logit')}"
+        margin_col = f"margin_{params.get('margin_model', 'ridge')}"
+        feats = build_features(matches, elo, load_team_games(), load_player_games())
+        new = walk_forward(feats, matches, game_ids=game_ids)
+        hist = window.merge(pd.read_parquet(OOS_PATH), on="game_id")
+        mapper = fit_platt(hist[col].to_numpy(), hist["outcome"].to_numpy())
+        return pd.DataFrame(
+            {
+                "game_id": new["game_id"],
+                "p_home": mapper(new[col].to_numpy()),
+                "pred_margin": new[margin_col],
+            }
+        )
+    raise ValueError(f"Unknown headline model {headline!r}")
 
 
 def next_round(matches: pd.DataFrame, preds: pd.DataFrame) -> pd.DataFrame:
@@ -83,12 +134,16 @@ def run() -> dict:
     ratings.to_parquet(config.DATA_PROCESSED / "elo_ratings.parquet", index=False)
 
     games = next_round(matches, preds)
+    headline = headline_model()
+    if len(games):
+        shipped = shipped_predictions(matches, preds, set(games["game_id"]), headline)
+        games = games.drop(columns=["p_home", "pred_margin"]).merge(shipped, on="game_id")
     next_params = schedule.get(config.NEXT_SEASON, config.ELO)
     pre = preseason_ratings(ratings, next_params.carryover)
     last_played = matches.dropna(subset=["outcome"]).iloc[-1]
 
     feed: dict = {
-        "model": "FootyForecast Elo",
+        "model": headline,
         "version": __version__,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "status": "in-season" if len(games) else "off-season",
