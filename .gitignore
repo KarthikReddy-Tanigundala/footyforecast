@@ -1,0 +1,41 @@
+# ---- Secrets (NEVER commit) ----
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# ---- Python ----
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+.ruff_cache/
+
+# ---- R ----
+.Rproj.user/
+.Rhistory
+.RData
+renv/library/
+renv/staging/
+renv/local/
+renv/cellar/
+*_files/
+R/reports/*.html
+
+# ---- Data ----
+# Match-level raw parquet (results, odds, tips, ladder) is small and committed so the weekly
+# job only fetches the latest round. Player-level Fryzigg stats are large: pulled per season.
+data/raw/player_stats_*.parquet
+data/raw/_cache/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ---- Local tool config ----
+.claude/

@@ -1,0 +1,5 @@
+# Normalise text to LF in the repo so artefacts regenerated on Linux CI diff cleanly.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.parquet binary
+*.png binary

@@ -1,0 +1,45 @@
+name: CI
+
+# Lint + tests + a full offline rebuild of the leaderboard on every PR and push.
+# The match-level raw extracts are committed, so CI needs no network access, no R and no
+# secrets, and it proves the published leaderboard is reproducible from a fresh clone.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Rebuild processed tables from committed raw extracts
+        run: python -m footyforecast.io
+
+      - name: Tests (incl. leakage guards and leaderboard reproducibility)
+        run: pytest
+
+      - name: Re-run the walk-forward backtest
+        run: python -m footyforecast.evaluation.backtest
+
+      - name: Leaderboard unchanged (ignoring the generated date)
+        run: git diff --exit-code -I "Generated 20" -- results/leaderboard.md

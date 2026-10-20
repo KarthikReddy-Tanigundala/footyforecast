@@ -1,0 +1,67 @@
+{
+  "targets": {
+    "results": {
+      "file": "results.parquet",
+      "rows": 7090,
+      "columns": 16,
+      "seasons": [
+        1990,
+        2026
+      ],
+      "pulled_at": "2026-10-20T15:02:47+1100",
+      "mode": "full",
+      "last_status": "ok"
+    },
+    "odds": {
+      "file": "odds.parquet",
+      "rows": 2172,
+      "columns": 18,
+      "seasons": [
+        2010,
+        2020
+      ],
+      "pulled_at": "2026-10-20T15:03:32+1100",
+      "mode": "full",
+      "last_status": "ok"
+    },
+    "squiggle_sources": {
+      "file": "squiggle_sources.parquet",
+      "rows": 41,
+      "columns": 4,
+      "seasons": null,
+      "pulled_at": "2026-10-20T15:03:34+1100",
+      "mode": "full",
+      "last_status": "ok"
+    },
+    "squiggle_tips": {
+      "file": "squiggle_tips.parquet",
+      "rows": 45249,
+      "columns": 21,
+      "seasons": [
+        2017,
+        2026
+      ],
+      "pulled_at": "2026-10-20T15:04:01+1100",
+      "mode": "full",
+      "last_status": "ok"
+    },
+    "squiggle_games": {
+      "file": "squiggle_games.parquet",
+      "rows": 2476,
+      "columns": 26,
+      "seasons": [
+        2015,
+        2026
+      ],
+      "pulled_at": "2026-10-20T15:04:37+1100",
+      "mode": "full",
+      "last_status": "ok"
+    },
+    "fixture": {
+      "last_status": "failed_or_empty"
+    }
+  },
+  "fitzroy_version": "1.8.0",
+  "r_version": "R version 4.5.0 (2025-04-11 ucrt)",
+  "generated_at": "2026-10-20T15:04:38+1100"
+}

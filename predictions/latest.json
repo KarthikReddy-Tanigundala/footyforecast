@@ -1,0 +1,106 @@
+{
+  "model": "FootyForecast Elo",
+  "version": "0.1.0",
+  "generated_at": "2026-10-20T04:22:35+00:00",
+  "status": "off-season",
+  "last_result": {
+    "season": 2026,
+    "round": "GF",
+    "date": "2026-09-26",
+    "match": "Fremantle 89 v Brisbane Lions 96"
+  },
+  "games": [],
+  "ratings": [
+    {
+      "team": "Brisbane Lions",
+      "rating": 1619.9,
+      "preseason_rating": 1607.3
+    },
+    {
+      "team": "Geelong",
+      "rating": 1618.2,
+      "preseason_rating": 1605.8
+    },
+    {
+      "team": "Sydney",
+      "rating": 1596.5,
+      "preseason_rating": 1586.2
+    },
+    {
+      "team": "Fremantle",
+      "rating": 1593.8,
+      "preseason_rating": 1583.8
+    },
+    {
+      "team": "Hawthorn",
+      "rating": 1590.5,
+      "preseason_rating": 1580.8
+    },
+    {
+      "team": "Carlton",
+      "rating": 1560.9,
+      "preseason_rating": 1554.2
+    },
+    {
+      "team": "Adelaide",
+      "rating": 1541.1,
+      "preseason_rating": 1536.3
+    },
+    {
+      "team": "Melbourne",
+      "rating": 1538.1,
+      "preseason_rating": 1533.6
+    },
+    {
+      "team": "Western Bulldogs",
+      "rating": 1520.9,
+      "preseason_rating": 1518.2
+    },
+    {
+      "team": "Collingwood",
+      "rating": 1491.8,
+      "preseason_rating": 1492.0
+    },
+    {
+      "team": "Gold Coast",
+      "rating": 1473.9,
+      "preseason_rating": 1475.9
+    },
+    {
+      "team": "Greater Western Sydney",
+      "rating": 1468.1,
+      "preseason_rating": 1470.7
+    },
+    {
+      "team": "St Kilda",
+      "rating": 1464.6,
+      "preseason_rating": 1467.5
+    },
+    {
+      "team": "North Melbourne",
+      "rating": 1463.3,
+      "preseason_rating": 1466.3
+    },
+    {
+      "team": "Port Adelaide",
+      "rating": 1385.2,
+      "preseason_rating": 1396.0
+    },
+    {
+      "team": "Richmond",
+      "rating": 1327.4,
+      "preseason_rating": 1344.0
+    },
+    {
+      "team": "West Coast",
+      "rating": 1323.6,
+      "preseason_rating": 1340.6
+    },
+    {
+      "team": "Essendon",
+      "rating": 1306.5,
+      "preseason_rating": 1325.2
+    }
+  ],
+  "notes": "hconfidence = P(home win) in %, hmargin = predicted home margin in points."
+}

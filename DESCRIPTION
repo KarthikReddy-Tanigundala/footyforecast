@@ -1,0 +1,23 @@
+Package: footyforecast.extract
+Title: FootyForecast R Layer (data extraction + HGA report)
+Version: 0.1.0
+Description: R is used for two things only: pulling AFL data with fitzRoy into
+    parquet (R/extract_data.R) and the home-ground-advantage analysis report
+    (R/reports/home_ground_advantage.qmd). Modelling lives in Python.
+    This file exists so renv can snapshot dependencies explicitly.
+License: MIT
+Encoding: UTF-8
+Imports:
+    fitzRoy (== 1.8.0),
+    nanoparquet,
+    dplyr,
+    tidyr,
+    purrr,
+    lubridate,
+    jsonlite,
+    ggplot2,
+    lme4,
+    broom,
+    scales,
+    knitr,
+    rmarkdown
