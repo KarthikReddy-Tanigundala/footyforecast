@@ -127,22 +127,37 @@ def walk_forward(
         models["margin"].fit(X_all.loc[train.index], train["margin"])
         models["ridge"].fit(X_all.loc[train.index], train["margin"])
         Xb = X_all.loc[batch.index]
-        rows.append(
-            pd.DataFrame(
-                {
-                    "game_id": batch["game_id"].to_numpy(),
-                    "season": batch["season"].to_numpy(),
-                    "cutoff": cutoff,
-                    "last_train_date": train["date"].max(),
-                    "n_train": len(train),
-                    "p_xgb": models["xgb"].predict_proba(Xb)[:, 1],
-                    "p_logit": models["logit"].predict_proba(Xb)[:, 1],
-                    "margin_xgb": models["margin"].predict(Xb),
-                    "margin_ridge": models["ridge"].predict(Xb),
-                }
-            )
+        frame = pd.DataFrame(
+            {
+                "game_id": batch["game_id"].to_numpy(),
+                "season": batch["season"].to_numpy(),
+                "cutoff": cutoff,
+                "last_train_date": train["date"].max(),
+                "n_train": len(train),
+                "p_xgb": models["xgb"].predict_proba(Xb)[:, 1],
+                "p_logit": models["logit"].predict_proba(Xb)[:, 1],
+                "margin_xgb": models["margin"].predict(Xb),
+                "margin_ridge": models["ridge"].predict(Xb),
+            }
         )
+        rows.append(pd.concat([frame, logit_contributions(models["logit"], Xb)], axis=1))
     return pd.concat(rows, ignore_index=True)
+
+
+def logit_contributions(pipeline, X: pd.DataFrame) -> pd.DataFrame:
+    """Exact SHAP values of the fitted logistic model, in log-odds, one column per feature.
+
+    For a linear model on standardised inputs, SHAP's LinearExplainer with the training data as
+    background gives φ_j = β_j · z_j (the training mean of z is 0). ``phi_base`` is the intercept,
+    so σ(phi_base + Σ φ_j) reproduces the model's probability (tested).
+    """
+    imp = pipeline.named_steps["simpleimputer"]
+    sc = pipeline.named_steps["standardscaler"]
+    lr = pipeline.named_steps["logisticregression"]
+    z = sc.transform(imp.transform(X))
+    phi = pd.DataFrame(z * lr.coef_[0], columns=[f"phi_{f}" for f in FEATURES])
+    phi.insert(0, "phi_base", lr.intercept_[0])
+    return phi
 
 
 def tune(features: pd.DataFrame, matches: pd.DataFrame) -> dict:

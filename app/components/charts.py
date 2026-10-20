@@ -33,6 +33,12 @@ def model_colors(ours: str) -> dict[str, str]:
 FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif'
 
 
+def _rgba(hex_color: str, alpha: float) -> str:
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i : i + 2], 16) for i in (0, 2, 4))
+    return f"rgba({r},{g},{b},{alpha})"
+
+
 def _base(fig: go.Figure, title: str | None = None, height: int = 380) -> go.Figure:
     fig.update_layout(
         title=dict(text=title, font=dict(size=15, color=INK), x=0, xanchor="left")
@@ -176,3 +182,97 @@ def win_probability_bar(p_home: float, home: str, away: str) -> go.Figure:
     fig.update_yaxes(visible=False)
     fig.update_layout(paper_bgcolor=SURFACE, plot_bgcolor=SURFACE)
     return fig
+
+
+def archetype_multiples(ps: pd.DataFrame, order: list[str]) -> go.Figure:
+    """Small multiples of the UMAP map: one panel per archetype, highlighted over the rest.
+
+    Six categories on one scatter can't be told apart reliably (CVD), so each archetype gets
+    its own panel in a single colour, with every other player-season as grey context.
+    """
+    from plotly.subplots import make_subplots
+
+    cols = 3
+    rows = -(-len(order) // cols)
+    fig = make_subplots(
+        rows=rows, cols=cols, subplot_titles=order, horizontal_spacing=0.03, vertical_spacing=0.08
+    )
+    for i, name in enumerate(order):
+        r, c = i // cols + 1, i % cols + 1
+        fig.add_trace(
+            go.Scattergl(
+                x=ps["umap_x"], y=ps["umap_y"], mode="markers", hoverinfo="skip",
+                marker=dict(size=3, color=GRID), showlegend=False,
+            ),
+            row=r, col=c,
+        )  # fmt: skip
+        sel = ps[ps["archetype"] == name]
+        fig.add_trace(
+            go.Scattergl(
+                x=sel["umap_x"], y=sel["umap_y"], mode="markers", showlegend=False,
+                marker=dict(size=5, color=BLUE, opacity=0.75),
+                customdata=sel[["player_name", "team", "season"]],
+                hovertemplate="<b>%{customdata[0]}</b> · %{customdata[1]} · %{customdata[2]}<extra>" + name + "</extra>",
+            ),
+            row=r, col=c,
+        )  # fmt: skip
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+    fig.update_annotations(font=dict(size=13, color=INK))
+    return _base(fig, None, height=300 * rows)
+
+
+def profile_bars(profile: pd.Series, labels: dict[str, str], n: int = 6) -> go.Figure:
+    """Diverging bars: the stats an archetype is most above (blue) and below (red) average on."""
+    top = pd.concat([profile.nlargest(n), profile.nsmallest(n)]).sort_values()
+    fig = go.Figure(
+        go.Bar(
+            x=top.to_numpy(),
+            y=[labels.get(k, k) for k in top.index],
+            orientation="h",
+            marker=dict(
+                color=np.where(top.to_numpy() >= 0, BLUE, RED), line=dict(color=SURFACE, width=2)
+            ),
+            width=0.6,
+            hovertemplate="<b>%{x:+.2f} SD</b> vs season average<extra>%{y}</extra>",
+            text=[f"{v:+.1f}" for v in top.to_numpy()],
+            textposition="outside",
+            textfont=dict(color=INK_2, size=11),
+            cliponaxis=False,
+        )
+    )
+    fig.update_xaxes(
+        title=dict(text="Standard deviations from the season average", font=dict(color=MUTED)),
+        zeroline=True,
+        zerolinecolor=AXIS,
+    )
+    fig.update_yaxes(showgrid=False, tickfont=dict(color=INK_2))
+    return _base(fig, None, height=420)
+
+
+def radar(df: pd.DataFrame) -> go.Figure:
+    """Within-season percentile radar for up to two player-seasons (blue, then orange)."""
+    fig = go.Figure()
+    axes = list(df.columns)
+    for (player, row), color in zip(df.iterrows(), (BLUE, ORANGE), strict=False):
+        values = [*row.to_numpy(), row.to_numpy()[0]]
+        fig.add_trace(
+            go.Scatterpolar(
+                r=values, theta=[*axes, axes[0]], name=player, fill="toself",
+                line=dict(color=color, width=2), fillcolor=_rgba(color, 0.15),
+                hovertemplate="<b>%{r:.0f}th percentile</b> · %{theta}<extra>" + player + "</extra>",
+            )
+        )  # fmt: skip
+    fig.update_layout(
+        polar=dict(
+            bgcolor=SURFACE,
+            radialaxis=dict(
+                range=[0, 100],
+                tickvals=[25, 50, 75],
+                gridcolor=GRID,
+                tickfont=dict(color=MUTED, size=10),
+            ),
+            angularaxis=dict(gridcolor=GRID, tickfont=dict(color=INK_2, size=11)),
+        )
+    )
+    return _base(fig, None, height=460)

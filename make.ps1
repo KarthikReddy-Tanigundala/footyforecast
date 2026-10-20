@@ -10,6 +10,8 @@
       tune       grid-search Elo on 2000-2016 + walk-forward re-tuning per season
       features   pre-match feature table -> data/processed/features.parquet
       ml         walk-forward ML predictions 2014-2026 (add -Tune to re-tune on 2014-2016 first)
+      archetypes player clustering + UMAP -> data/processed/player_seasons.parquet (needs raw player stats)
+      explain    global SHAP plots -> results/shap_*.png
       backtest   walk-forward 2017-2026 -> results/leaderboard.md
       predict    next-round predictions + predictions/latest.json
       app        run the Streamlit dashboard
@@ -20,7 +22,7 @@
 #>
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('setup', 'r-setup', 'extract', 'refresh', 'build', 'tune', 'features', 'ml', 'backtest', 'predict',
+    [ValidateSet('setup', 'r-setup', 'extract', 'refresh', 'build', 'tune', 'features', 'ml', 'archetypes', 'explain', 'backtest', 'predict',
                  'app', 'test', 'lint', 'report', 'all')]
     [string]$Target = 'all',
     [switch]$Refresh,
@@ -66,6 +68,8 @@ switch ($Target) {
     'tune'     { foreach ($m in 'flat', 'venue', 'walkforward') { Invoke-Checked $Py @('-m', 'footyforecast.elo', '--mode', $m) } }
     'features' { Invoke-Checked $Py @('-m', 'footyforecast.features') }
     'ml'       { $a = @('-m', 'footyforecast.model_match'); if ($Tune) { $a += '--tune' }; Invoke-Checked $Py $a }
+    'archetypes' { Invoke-Checked $Py @('-m', 'footyforecast.clustering') }
+    'explain'  { Invoke-Checked $Py @('-m', 'footyforecast.explain') }
     'backtest' { Invoke-Checked $Py @('-m', 'footyforecast.evaluation.backtest') }
     'predict'  { Invoke-Checked $Py @('-m', 'footyforecast.predict') }
     'app'      { Invoke-Checked $Py @('-m', 'streamlit', 'run', 'app/streamlit_app.py') }

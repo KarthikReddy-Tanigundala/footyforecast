@@ -68,13 +68,23 @@ def shipped_predictions(
         new = walk_forward(feats, matches, game_ids=game_ids)
         hist = window.merge(pd.read_parquet(OOS_PATH), on="game_id")
         mapper = fit_platt(hist[col].to_numpy(), hist["outcome"].to_numpy())
-        return pd.DataFrame(
+        out = pd.DataFrame(
             {
                 "game_id": new["game_id"],
                 "p_home": mapper(new[col].to_numpy()),
                 "pred_margin": new[margin_col],
             }
         )
+        if col == "p_logit":
+            from footyforecast.explain import context, explain_games
+
+            ctx = context(matches, elo, feats).merge(
+                new.filter(regex="^(game_id|phi_)"), on="game_id"
+            )
+            season = int(new["season"].iat[0])
+            why = explain_games(ctx, {season: mapper})[["game_id", "why"]]
+            out = out.merge(why, on="game_id", how="left")
+        return out
     raise ValueError(f"Unknown headline model {headline!r}")
 
 
@@ -119,6 +129,7 @@ def feed_rows(games: pd.DataFrame) -> list[dict]:
                 "elo_home": round(float(g.elo_home), 1),
                 "elo_away": round(float(g.elo_away), 1),
                 "hga_elo": round(float(g.hga_elo), 1),
+                "why": getattr(g, "why", None),
             }
         )
     return rows

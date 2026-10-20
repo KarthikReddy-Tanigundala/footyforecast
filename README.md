@@ -3,16 +3,21 @@
 > AFL match predictions (win probability + margin) from a from-scratch Elo system and a
 > pre-match feature model. Both are scored walk-forward over ten seasons against the betting market and
 > every public model on [Squiggle](https://squiggle.com.au), using Squiggle's own metrics.
+> Every tip comes with a plain-English reason, and players are clustered into six playing-style
+> archetypes with a "plays like" similarity tool.
 > Hybrid pipeline: R (fitzRoy) for data extraction, Python for everything else.
 
-**Status:** Phase 2 complete. Elo, pre-match features, ML models, calibration, leaderboard, dashboard.
-Next: player archetypes + SHAP explanations, then a live **2027 Squiggle entry**. See [Roadmap](#-roadmap).
+**Status:** Phase 3 complete. Predictions, calibration, explanations, archetypes, similarity, 4-tab dashboard.
+Next: R home-ground-advantage report and weekly automation, then a live **2027 Squiggle entry**.
+See [Roadmap](#-roadmap).
 
 | Asset | Link |
 |---|---|
-| 🏉 Dashboard (Streamlit) | _deploying: run locally with `.\make.ps1 app`_ |
+| 🏉 Dashboard (Streamlit, 4 tabs) | _deploying: run locally with `.\make.ps1 app`_ |
 | 🏆 FootyForecast vs the field | [results/leaderboard.md](results/leaderboard.md) |
 | 📈 Calibration | [results/calibration_plot.png](results/calibration_plot.png) |
+| 🧠 Player archetypes | [results/cluster_viz.png](results/cluster_viz.png) |
+| 🔎 What drives the model (SHAP) | [results/shap_beeswarm.png](results/shap_beeswarm.png) |
 | 📡 Tips feed (Squiggle-ready) | [predictions/latest.json](predictions/latest.json) |
 
 ---
@@ -69,6 +74,62 @@ reproduces Squiggle's published per-tip bits (within 0.01) for **100% of 45,249 
 - **Isotonic calibration overfits** about 600 calibration games (265 bits vs 289 for Platt on the same XGBoost).
 - **Venue- and travel-aware home-ground advantage** beats a flat HGA (+3.0 bits). Re-tuning Elo
   each pre-season adds +2.8.
+
+---
+
+## 💬 Every tip, explained
+
+The shipped model is a logistic regression, so its SHAP values are exact (coefficient ×
+standardised feature, verified against `shap.LinearExplainer`). The 29 features are grouped into
+footy reasons. Each reason is reported as how far the tip would move if that factor were neutral,
+passed through the same calibration map that produced the probability. For example, the 2019
+Round 1 tip (Brisbane won by 64):
+
+> **Brisbane Lions 70% over West Coast**: +20 pts Brisbane Lions' stronger selected 22 (West Coast
+> made 6 changes); −12 pts West Coast's higher Elo rating (1599 v 1436); +6 pts West Coast's recent
+> form edge discounted (already priced into the Elo rating)
+
+Reasons are written to be **factual**. With correlated features a model can lean *against* a team's
+edge: with the Elo gap already in, recent margins get a negative weight, a mean-reversion
+correction. The text then says the edge was discounted rather than inventing a reason. A guard
+checks that every explanation reproduces the exact probability that was scored.
+
+![SHAP importance: logistic vs XGBoost](results/shap_importance.png)
+
+Two very different models lean on the same evidence: the Elo gap, inside-50 dominance, ladder
+percentage, selected-22 strength and ground familiarity.
+
+---
+
+## 🧠 Player archetypes & "plays like"
+
+![AFL player archetypes](results/cluster_viz.png)
+
+Built from **7,049 player-seasons (2012–2026)**: players with at least 8 games at 50%+ time on
+ground, 38 per-game style stats, each **z-scored within its own season** so eras compare fairly.
+Then PCA (90% variance), K-means, and a Gaussian mixture for hybrids. **K = 6** was chosen by
+silhouette within 6–9 (matching the six archetypes earlier public AFL work found), never by the
+position labels used to validate it. Names come from domain templates matched to cluster
+profiles by the Hungarian algorithm, so they aren't eyeballed.
+
+| Archetype | Player-seasons | Most often named at | Share | Captures |
+|---|---:|---|---:|---:|
+| Small / Pressure Forward | 1,686 | General Forward | 60% | 56% of them |
+| Key / Intercept Defender | 1,381 | General Defender | 53% | 43% |
+| Inside Midfielder | 1,338 | Midfielder | 70% | 83% |
+| Rebounding Defender | 1,288 | General Defender | 61% | 47% |
+| Key Forward | 974 | Key Forward | 51% | 75% |
+| Ruck | 382 | Ruck | 90% | 96% |
+
+**Validation:** ARI 0.35 and NMI 0.48 against named positions. Named positions are team-sheet slots
+and a noisy label, so partial agreement is expected. Defenders split by *style* (spoil/intercept vs
+rebound) rather than by key vs general position, and 27% of player-seasons are hybrids
+(mixture membership < 70%).
+
+**"Plays like"** (cosine similarity on the season-relative profile, any era):
+Max Gawn 2026 → Rowan Marshall 2019, Brodie Grundy 2019 · Charlie Curnow 2026 → Tom Lynch 2019,
+Harry McKay 2021 · Marcus Bontempelli 2026 → Hugh McCluggage 2025, Joel Selwood 2012 ·
+Jeremy McGovern 2024 → Steven May 2022.
 
 ---
 
@@ -141,7 +202,9 @@ mapped onto their Fryzigg history.
 | Modelling | Python 3.12/3.13, pandas, NumPy, **scikit-learn** (logistic, ridge, Platt/isotonic), **XGBoost** |
 | Evaluation | Walk-forward backtest; tips, bits, MAE, Brier, log loss, ECE; reliability diagrams; round-clustered paired bootstrap |
 | App | Streamlit + Plotly (colour-blind-validated palette) |
-| Quality | pytest (33 tests incl. perturbation leakage tests), ruff, pre-commit + detect-secrets, GitHub Actions CI |
+| Explainability | SHAP (LinearExplainer for the shipped model, TreeExplainer for XGBoost), counterfactual plain-English reasons |
+| Clustering | PCA → K-means + Gaussian mixture, UMAP (display only), Hungarian template naming, cosine similarity |
+| Quality | pytest (42 tests incl. perturbation leakage tests and SHAP equivalence), ruff, pre-commit + detect-secrets, GitHub Actions CI |
 
 ## 📊 Data sources & etiquette
 
@@ -175,6 +238,7 @@ macOS/Linux: the same targets via `make setup`, `make all`, `make app`.
 | Re-pull data (needs R + `.env` with `FOOTY_CONTACT_EMAIL`) | `.\make.ps1 extract -Refresh` | ~8 min |
 | Re-tune Elo (grid + walk-forward schedule) | `.\make.ps1 tune` | ~2 min |
 | Refit the ML walk-forward (add `-Tune` to redo the 2014–16 grid) | `.\make.ps1 ml` | ~1 min (+5) |
+| Re-cluster archetypes (needs raw player stats) / redraw SHAP plots | `.\make.ps1 archetypes`, `.\make.ps1 explain` | ~1 min / seconds |
 | Tests / lint | `.\make.ps1 test`, `.\make.ps1 lint` | seconds |
 
 CI rebuilds the tables and features from committed data and re-scores the backtest, with no network,
@@ -187,7 +251,7 @@ committed artefacts, so re-scoring is deterministic.
 
 - [x] **Phase 1, MVP:** R extract, name/venue normalisation, Elo from scratch, baselines, walk-forward backtest, leaderboard, dashboard, CI
 - [x] **Phase 2, ML + calibration:** 29 as-of pre-match features incl. team selection, walk-forward logistic/XGBoost/ridge, Platt + isotonic, reliability diagrams, bootstrap significance
-- [ ] **Phase 3:** player-archetype clustering (PCA/UMAP → K-means/GMM, validated against positions), similarity tool, plain-English explanations of each tip
+- [x] **Phase 3, archetypes + explanations:** 6 validated playing-style archetypes, "plays like" similarity tool, exact-SHAP plain-English reason for every tip, Archetypes and Similarity dashboard tabs
 - [ ] **Phase 4:** R Quarto report on home-ground advantage, weekly in-season refresh with official team selections, ARCHITECTURE/METHODOLOGY docs and ADRs
 - [ ] **Phase 5:** deploy to Streamlit Community Cloud, demo GIF, register for the **2027 Squiggle leaderboard**
 
@@ -197,13 +261,15 @@ committed artefacts, so re-scoring is deterministic.
 R/                    fitzRoy extract (+ renv setup)
 data/raw/             immutable extracts (parquet) + manifest; player-level raw gitignored
 data/reference/       team aliases, team bases, venues (lat/lon), venue aliases
-data/processed/       matches, Squiggle tips, odds, player_games, team_games, features, ratings
-src/footyforecast/    io · elo · features · model_match · calibration · benchmark · predict
-                      evaluation/{metrics, backtest}
-results/              leaderboard, calibration plot, backtest results, tuning grids, ML OOS predictions
+data/processed/       matches, Squiggle tips, odds, player_games, team_games, features, ratings,
+                      player_seasons (archetypes + UMAP + style z-scores)
+src/footyforecast/    io · elo · features · model_match · calibration · explain · benchmark · predict
+                      clustering · similarity · style · evaluation/{metrics, backtest}
+results/              leaderboard, calibration/SHAP/cluster plots, archetypes.json, backtest results,
+                      tuning grids, ML OOS predictions (with per-game SHAP values)
 predictions/          latest.json feed + per-round archive
 app/                  Streamlit dashboard
-tests/                metrics, Elo + feature leakage, linking, ML walk-forward, reproducibility
+tests/                metrics, Elo + feature leakage, linking, ML walk-forward, SHAP, clustering, reproducibility
 ```
 
 ## 🎓 About

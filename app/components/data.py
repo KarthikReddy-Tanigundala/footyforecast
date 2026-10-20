@@ -41,3 +41,13 @@ def calibration_tables(ours: str, n_bins: int = 10) -> dict[str, pd.DataFrame]:
     market = games.dropna(subset=["p_punters"])
     out["Punters"] = metrics.calibration_table(market["p_punters"], market["outcome"], n_bins)
     return out
+
+
+@st.cache_data(show_spinner=False)
+def player_seasons() -> pd.DataFrame:
+    return pd.read_parquet(ROOT / "data" / "processed" / "player_seasons.parquet")
+
+
+@st.cache_data(show_spinner=False)
+def archetypes() -> dict:
+    return json.loads((RESULTS / "archetypes.json").read_text(encoding="utf-8"))

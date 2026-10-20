@@ -779,3 +779,20 @@ full-coverage field (behind Punters, Matter of Stats, Aggregate, Squiggle; ahead
 +19.6 bits [−5.0, +43.8]; vs Elo+Platt +5.6 [−16.9, +28.4] (indistinguishable — most of the gain is
 calibration: Platt alone gives Elo +14 bits). Market still clearly ahead (−48 [−71, −25]).
 2022–26 Squiggle ranks improved from bottom quartile to 10th–14th.
+
+### 17.2 Phase 3 decisions (2026-10-20)
+
+| # | Decision | Why |
+|---|---|---|
+| 21 | Archetypes clustered on **38 per-game style stats only**; height/weight excluded | The AFL source (needed for 2026) has no physical data; style is the better definition of an archetype anyway |
+| 22 | Player-season = games with **≥50% time on ground**, ≥8 such games; stats **z-scored within season** | Sub/injury cameos distort roles; era drift (e.g. tackle counts) shouldn't separate players |
+| 23 | **K = 6** by best silhouette within 6–9 (position labels never used to choose K) | Matches the DFS Australia precedent in §6.3; silhouette 0.280 vs 0.244 at K=7 |
+| 24 | Names via domain templates + **Hungarian assignment** on centroid profiles; "Key Defender" renamed **"Key / Intercept Defender"** | Reproducible naming; that cluster is 53% general defenders who intercept and spoil |
+| 25 | GMM soft memberships mapped to K-means clusters by **max overlap (Hungarian)** | EM moves components away from their K-means initialisation; a bug showed primary = secondary otherwise |
+| 26 | Explanations use **exact linear SHAP** (φ = β·z) stored per game in the walk-forward; reasons are counterfactual Δ pts through the season's calibration map | Exact, cheap, consistent with what was scored (guard asserts ≤1e-9 gap) |
+| 27 | Reason text checks **data direction vs model direction**; disagreement → "edge discounted" | Correlated features give negative weights (recent margin after Elo = mean reversion); never invent a reason |
+| 28 | `footyforecast.style` holds shared constants | Keeps the deployed app free of scikit-learn/SciPy/UMAP/SHAP |
+
+**Phase-3 result:** 7,049 player-seasons → 6 archetypes; ARI 0.35 / NMI 0.48 vs named positions; Ruck
+90% pure / 96% recall, Inside Midfielder 70% / 83%, Key Forward recall 75%; 27% hybrids. SHAP top drivers
+agree across logistic and XGBoost (Elo gap, inside-50 dominance, ladder %, selected-22 strength).

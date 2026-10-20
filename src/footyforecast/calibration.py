@@ -63,16 +63,29 @@ def calibrate_walk_forward(
     Returns a Series indexed like ``preds`` (NaN outside ``seasons``).
     """
     out = pd.Series(np.nan, index=preds.index)
+    for s, mapper in walk_forward_mappers(preds, p_col, method, seasons, window).items():
+        rows = preds["season"] == s
+        out[rows] = mapper(preds.loc[rows, p_col].to_numpy())
+    return out
+
+
+def walk_forward_mappers(
+    preds: pd.DataFrame,
+    p_col: str,
+    method: str = "platt",
+    seasons: tuple[int, ...] = config.EVAL_SEASONS,
+    window: int = CAL_WINDOW,
+) -> dict[int, Callable[[np.ndarray], np.ndarray]]:
+    """The calibration map used for each season, fitted on the previous ``window`` seasons."""
     fit = METHODS[method]
+    mappers = {}
     for s in seasons:
         cal = preds[preds["season"].between(s - window, s - 1) & preds["outcome"].isin([0.0, 1.0])]
         cal = cal.dropna(subset=[p_col])
         if len(cal) < 100:
             raise ValueError(f"only {len(cal)} calibration games before {s} for {p_col}")
-        mapper = fit(cal[p_col].to_numpy(), cal["outcome"].to_numpy())
-        rows = preds["season"] == s
-        out[rows] = mapper(preds.loc[rows, p_col].to_numpy())
-    return out
+        mappers[s] = fit(cal[p_col].to_numpy(), cal["outcome"].to_numpy())
+    return mappers
 
 
 def reliability_figure(

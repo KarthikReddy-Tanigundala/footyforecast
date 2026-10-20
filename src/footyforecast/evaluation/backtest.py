@@ -32,7 +32,11 @@ import numpy as np
 import pandas as pd
 
 from footyforecast import benchmark, config
-from footyforecast.calibration import calibrate_walk_forward, reliability_figure
+from footyforecast.calibration import (
+    calibrate_walk_forward,
+    reliability_figure,
+    walk_forward_mappers,
+)
 from footyforecast.elo import EloEngine, load_schedule
 from footyforecast.evaluation import metrics
 from footyforecast.io import load_bookmaker, load_geography, load_matches, load_squiggle_tips
@@ -445,6 +449,34 @@ def build_predictions(
     return preds, cal, engine
 
 
+def tip_reasons(
+    matches: pd.DataFrame, preds: dict[str, pd.DataFrame], cal: pd.DataFrame, ours: str
+) -> pd.DataFrame:
+    """Plain-English reasons for every evaluation-season tip of the shipped logistic model."""
+    from footyforecast.explain import context, explain_games
+
+    oos_path = config.RESULTS / "ml_oos_predictions.parquet"
+    if (
+        ours not in ML_NAMES.values()
+        or load_params().get("classifier") != "logit"
+        or not oos_path.exists()
+    ):
+        return pd.DataFrame(columns=["game_id", "why"])
+    phi = pd.read_parquet(oos_path).filter(regex="^(game_id|phi_)")
+    feats = pd.read_parquet(config.DATA_PROCESSED / "features.parquet")
+    ctx = context(matches, preds[ELO_RAW], feats).merge(phi, on="game_id")
+    ctx = ctx[ctx["season"].isin(config.EVAL_SEASONS)]
+    explained = explain_games(ctx, walk_forward_mappers(cal, "p_logit"))
+    # The reasons must describe exactly the probabilities that were scored.
+    shipped = explained.merge(preds[ours][["game_id", "p_home"]], on="game_id")
+    gap = (shipped["p_home_explained"] - shipped["p_home"]).abs().max()
+    if gap > 1e-9:
+        raise AssertionError(
+            f"explanations disagree with the shipped probabilities (max gap {gap:.2e})"
+        )
+    return explained[["game_id", "why"]]
+
+
 def pick_headline(pooled: pd.DataFrame) -> str:
     """The pre-registered rule: ship the FootyForecast candidate with the most bits."""
     cands = pooled[pooled["model"].isin(CANDIDATES)]
@@ -519,6 +551,7 @@ def run() -> dict:
         .merge(renamed("Aggregate", "p_aggregate", "m_aggregate"), on="game_id", how="left")
     )
     game_level = game_level[game_level["season"] >= config.EVAL_SEASONS[0]]
+    game_level = game_level.merge(tip_reasons(matches, preds, cal, ours), on="game_id", how="left")
     game_level.to_parquet(config.RESULTS / "backtest_predictions.parquet", index=False)
 
     config.DATA_PROCESSED.mkdir(parents=True, exist_ok=True)

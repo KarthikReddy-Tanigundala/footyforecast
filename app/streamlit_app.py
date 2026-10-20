@@ -1,4 +1,4 @@
-"""FootyForecast dashboard: This Round · Model vs The Field.
+"""FootyForecast dashboard: This Round · Model vs The Field · Player Archetypes · Player Similarity.
 
 Run locally:  streamlit run app/streamlit_app.py
 Everything shown is read from committed artefacts (results/, predictions/), so the app
@@ -44,7 +44,9 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_round, tab_field = st.tabs(["This Round", "Model vs The Field"])
+tab_round, tab_field, tab_arch, tab_sim = st.tabs(
+    ["This Round", "Model vs The Field", "Player Archetypes", "Player Similarity"]
+)
 
 
 # ---- Tab 1: This Round ---------------------------------------------------------------------
@@ -75,6 +77,8 @@ with tab_round:
                     config={"displayModeBar": False},
                 )
                 fav = g["tip"]
+                if g.get("why"):
+                    st.markdown(f"**Why:** {g['why']}")
                 st.caption(
                     f"Tip: **{fav}** by {abs(g['hmargin']):.0f} points · home-ground edge "
                     f"{g['hga_elo']:+.0f} Elo · ratings {g['elo_home']:.0f} v {g['elo_away']:.0f}"
@@ -171,6 +175,14 @@ with tab_round:
         }
     )
     st.dataframe(table, hide_index=True, width="stretch")
+    if "why" in rg and rg["why"].notna().any():
+        st.markdown("**Why the shipped model tipped each game**")
+        st.markdown("\n".join(f"- {w}" for w in rg["why"].dropna()))
+    st.caption(
+        "Each reason is how many percentage points the tip would move if that factor were "
+        "neutral, from exact SHAP values of the logistic model. Where the model leans against "
+        "a team's edge (correlated factors), the reason says the edge is discounted."
+    )
 
 
 # ---- Tab 2: Model vs The Field -----------------------------------------------------------------
@@ -338,6 +350,140 @@ with tab_field:
             }
             | {c: st.column_config.NumberColumn(format="%.2f") for c in ("Their MAE", "FF MAE")},
         )
+
+# ---- Tab 3: Player Archetypes ---------------------------------------------------------------
+from footyforecast.style import FEATURES as STYLE_FEATURES  # noqa: E402
+
+STAT_LABELS = {f: f.replace("_", " ").replace("fifty", "50").capitalize() for f in STYLE_FEATURES}
+ps = data.player_seasons()
+arch = data.archetypes()
+
+with tab_arch:
+    st.markdown(
+        f"**{arch['k']} playing-style archetypes** from {arch['player_seasons']:,} player-seasons "
+        f"({ps['season'].min()}–{ps['season'].max()}, at least 8 games with 50%+ time on ground), "
+        "built from 38 per-game stats measured against each season's peers → PCA → K-means. K was "
+        "chosen by silhouette, never by the position labels used to validate it."
+    )
+    v1, v2, v3 = st.columns(3)
+    v1.metric("Adjusted Rand index vs named positions", f"{arch['ari_vs_position']:.2f}")
+    v2.metric("NMI vs named positions", f"{arch['nmi_vs_position']:.2f}")
+    v3.metric(
+        "Hybrid player-seasons",
+        f"{(ps['membership'] < 0.7).mean():.0%}",
+        help="Mixture-model membership of their archetype below 70%",
+    )
+
+    order = list(pd.Series(arch["sizes"]).sort_values(ascending=False).index)
+    seasons_sel = st.select_slider(
+        "Seasons",
+        options=sorted(ps["season"].unique()),
+        value=(ps["season"].min(), ps["season"].max()),
+    )
+    view = ps[ps["season"].between(*seasons_sel)]
+    st.plotly_chart(charts.archetype_multiples(view, order), width="stretch")
+
+    pick = st.selectbox("Archetype profile", order)
+    left, right = st.columns([3, 2])
+    with left:
+        profile = pd.Series(arch["profiles"][pick])
+        st.plotly_chart(charts.profile_bars(profile, STAT_LABELS), width="stretch")
+    with right:
+        purity = pd.DataFrame(arch["purity"]).set_index("archetype").loc[pick]
+        st.markdown(f"**{pick}**: {arch['sizes'][pick]:,} player-seasons")
+        st.markdown(
+            f"Most often named at **{purity['top_named_position']}** ({purity['share']:.0%} of the "
+            f"archetype); it captures {purity['recall']:.0%} of all named "
+            f"{purity['top_named_position']}s."
+        )
+        latest = ps[(ps["archetype"] == pick) & (ps["season"] == ps["season"].max())]
+        st.markdown(f"Highest-rated clear examples in {ps['season'].max()} (fit ≥ 90%):")
+        st.dataframe(
+            latest[latest["membership"] >= 0.9]
+            .sort_values("rating_points", ascending=False)
+            .head(8)[["player_name", "team", "games", "membership"]]
+            .rename(
+                columns={
+                    "player_name": "Player",
+                    "team": "Club",
+                    "games": "Games",
+                    "membership": "Fit",
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+            column_config={"Fit": st.column_config.NumberColumn(format="percent")},
+        )
+    with st.expander("Validation: archetypes × named positions"):
+        st.dataframe(pd.DataFrame(arch["crosstab"]).fillna(0).astype(int), width="stretch")
+        st.caption(
+            "Named positions are team-sheet slots, a noisy label (a 'half-forward' may spend the "
+            "day on a wing), so partial agreement is expected. Defenders split by style "
+            "(spoil/intercept vs rebound) rather than by key vs general position."
+        )
+
+
+# ---- Tab 4: Player Similarity ------------------------------------------------------------------
+from footyforecast.similarity import most_similar, radar  # noqa: E402
+
+with tab_sim:
+    st.markdown(
+        "Find the players whose statistical *shape* is closest: cosine similarity on 38 style "
+        "stats, each measured against its own season, so eras compare fairly."
+    )
+    c1, c2, c3 = st.columns([1, 2, 1])
+    season_s = c1.selectbox("Season", sorted(ps["season"].unique(), reverse=True), key="sim_season")
+    pool = ps[ps["season"] == season_s].sort_values("player_name").reset_index(drop=True)
+    labels_s = (pool["player_name"] + " (" + pool["team"] + ")").tolist()
+    starts = [i for i, lab in enumerate(labels_s) if lab.startswith("Marcus Bontempelli")]
+    who = c2.selectbox("Player", labels_s, index=starts[0] if starts else 0)
+    any_era = c3.toggle("Search all seasons", value=True)
+    row = pool.iloc[labels_s.index(who)]
+    mix = sorted(
+        [
+            (row["archetype"], row["membership"]),
+            (row["secondary_archetype"], row["secondary_membership"]),
+        ],
+        key=lambda t: -t[1],
+    )
+    st.markdown(
+        f"**{row['player_name']}**, {row['team']} {season_s}: archetype **{row['archetype']}** · "
+        "style mix " + " · ".join(f"{name} {share:.0%}" for name, share in mix if share >= 0.05)
+    )
+    sims = most_similar(
+        ps,
+        row["player_key"],
+        int(season_s),
+        n=10,
+        seasons=None if any_era else (int(season_s), int(season_s)),
+    )
+    left, right = st.columns([2, 3])
+    with left:
+        st.dataframe(
+            sims.rename(
+                columns={
+                    "player_name": "Player",
+                    "team": "Club",
+                    "season": "Season",
+                    "archetype": "Archetype",
+                    "games": "Games",
+                    "similarity": "Similarity",
+                }
+            ),
+            hide_index=True,
+            width="stretch",
+            column_config={"Similarity": st.column_config.NumberColumn(format="%.2f")},
+        )
+    with right:
+        best = sims.iloc[0]
+        match = ps[
+            (ps["player_name"] == best["player_name"]) & (ps["season"] == best["season"])
+        ].iloc[0]
+        st.plotly_chart(charts.radar(radar(ps, [row, match])), width="stretch")
+        st.caption(
+            "Percentile within each player's own season; the radar compares the closest match."
+        )
+
 
 st.divider()
 st.caption(

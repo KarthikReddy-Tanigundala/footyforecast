@@ -292,7 +292,52 @@ PLAYER_STATS = [
 ]
 
 
-def _std_fryzigg(raw: pd.DataFrame) -> pd.DataFrame:
+# Fryzigg column → AFL-source column. The two sources carry the same Champion Data stats under
+# different names; this map lets any subset of stats be pulled consistently from either.
+AFL_COLUMNS = {
+    "rating_points": "ratingPoints",
+    "kicks": "kicks",
+    "handballs": "handballs",
+    "disposals": "disposals",
+    "effective_disposals": "extendedStats.effectiveDisposals",
+    "marks": "marks",
+    "contested_marks": "contestedMarks",
+    "marks_inside_fifty": "marksInside50",
+    "marks_on_lead": "extendedStats.marksOnLead",
+    "intercept_marks": "extendedStats.interceptMarks",
+    "tackles": "tackles",
+    "tackles_inside_fifty": "tacklesInside50",
+    "pressure_acts": "extendedStats.pressureActs",
+    "def_half_pressure_acts": "extendedStats.defHalfPressureActs",
+    "clearances": "clearances.totalClearances",
+    "centre_clearances": "clearances.centreClearances",
+    "stoppage_clearances": "clearances.stoppageClearances",
+    "contested_possessions": "contestedPossessions",
+    "uncontested_possessions": "uncontestedPossessions",
+    "ground_ball_gets": "extendedStats.groundBallGets",
+    "f50_ground_ball_gets": "extendedStats.f50GroundBallGets",
+    "inside_fifties": "inside50s",
+    "rebounds": "rebound50s",
+    "metres_gained": "metresGained",
+    "goals": "goals",
+    "behinds": "behinds",
+    "shots_at_goal": "shotsAtGoal",
+    "goal_assists": "goalAssists",
+    "score_involvements": "scoreInvolvements",
+    "score_launches": "extendedStats.scoreLaunches",
+    "hitouts": "hitouts",
+    "hitouts_to_advantage": "extendedStats.hitoutsToAdvantage",
+    "ruck_contests": "extendedStats.ruckContests",
+    "intercepts": "intercepts",
+    "spoils": "extendedStats.spoils",
+    "one_percenters": "onePercenters",
+    "clangers": "clangers",
+    "turnovers": "turnovers",
+    "bounces": "bounces",
+}
+
+
+def _std_fryzigg(raw: pd.DataFrame, stats: list[str]) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "season": raw["season"].astype(int),
@@ -306,13 +351,13 @@ def _std_fryzigg(raw: pd.DataFrame) -> pd.DataFrame:
             + raw["player_last_name"].str.strip(),
             "position": raw["player_position"],
             "time_on_ground": pd.to_numeric(raw["time_on_ground_percentage"], errors="coerce"),
-            **{s: pd.to_numeric(raw[s], errors="coerce") for s in PLAYER_STATS},
+            **{s: pd.to_numeric(raw[s], errors="coerce") for s in stats},
             "source": "fryzigg",
         }
     )
 
 
-def _std_afl(raw: pd.DataFrame) -> pd.DataFrame:
+def _std_afl(raw: pd.DataFrame, stats: list[str]) -> pd.DataFrame:
     local = pd.to_datetime(raw["utcStartTime"], utc=True).dt.tz_convert("Australia/Melbourne")
     return pd.DataFrame(
         {
@@ -327,56 +372,58 @@ def _std_afl(raw: pd.DataFrame) -> pd.DataFrame:
             + raw["player.player.player.surname"].str.strip(),
             "position": raw.get("player.player.position", pd.Series(pd.NA, index=raw.index)),
             "time_on_ground": pd.to_numeric(raw["timeOnGroundPercentage"], errors="coerce"),
-            "rating_points": pd.to_numeric(raw["ratingPoints"], errors="coerce"),
-            "contested_possessions": pd.to_numeric(raw["contestedPossessions"], errors="coerce"),
-            "clearances": pd.to_numeric(raw["clearances.totalClearances"], errors="coerce"),
-            "inside_fifties": pd.to_numeric(raw["inside50s"], errors="coerce"),
-            "metres_gained": pd.to_numeric(raw["metresGained"], errors="coerce"),
-            "intercepts": pd.to_numeric(raw["intercepts"], errors="coerce"),
-            "tackles": pd.to_numeric(raw["tackles"], errors="coerce"),
+            **{s: pd.to_numeric(raw[AFL_COLUMNS[s]], errors="coerce") for s in stats},
             "source": "afl",
         }
     )
 
 
+def combine_player_sources(
+    fryzigg: pd.DataFrame, afl: pd.DataFrame | None, stats: list[str]
+) -> tuple[pd.DataFrame, dict]:
+    """Player-game rows from both sources with one player id (``player_key``).
+
+    Fryzigg is primary; the AFL source only contributes seasons Fryzigg lacks. The seasons
+    both cover are used to check that they agree and to map AFL ids onto Fryzigg ids, so a
+    player's history runs straight across the change of source.
+    """
+    need = sorted({*stats, "rating_points", "metres_gained"})
+    base = ["season", "date", "home_team", "away_team", "team", "player_key", "player_name"]
+    cols = [*base, "position", "time_on_ground", *stats, "source"]
+    fz = _std_fryzigg(fryzigg, need)
+    if afl is None or afl.empty:
+        return fz[cols], {}
+    af = _std_afl(afl, need)
+    overlap = sorted(set(fz["season"]) & set(af["season"]))
+    keys = ["date", "team", "player_name"]
+    both = fz[fz["season"].isin(overlap)].merge(
+        af[af["season"].isin(overlap)], on=keys, suffixes=("_fz", "_afl")
+    )
+    n_afl_overlap = int(af["season"].isin(overlap).sum())
+    check: dict = {
+        "overlap_seasons": overlap,
+        "afl_rows_matched": len(both) / max(n_afl_overlap, 1),
+        "rating_points_agree": float(
+            (both["rating_points_fz"] - both["rating_points_afl"]).abs().lt(0.05).mean()
+        ),
+        "metres_gained_agree": float(
+            (both["metres_gained_fz"] - both["metres_gained_afl"]).abs().lt(0.5).mean()
+        ),
+    }
+    id_map = both.drop_duplicates("player_key_afl").set_index("player_key_afl")["player_key_fz"]
+    later = af[~af["season"].isin(fz["season"].unique())].copy()
+    later["player_key"] = later["player_key"].map(id_map).fillna(later["player_key"])
+    check["later_players_mapped"] = (
+        float(later["player_key"].str.startswith("FZ").mean()) if len(later) else 1.0
+    )
+    return pd.concat([fz[cols], later[cols]], ignore_index=True), check
+
+
 def build_player_games(
     fryzigg: pd.DataFrame, afl: pd.DataFrame | None, matches: pd.DataFrame
 ) -> tuple[pd.DataFrame, dict[str, float]]:
-    """One row per player per game, keyed to our game_id, with one player id across sources.
-
-    Fryzigg is the primary source (2012–2025) and the AFL source fills later seasons. Both
-    cover 2025, which is used to (a) check the two sources agree and (b) map AFL player
-    ids onto Fryzigg ids, so a 2026 player's rating history continues from 2025.
-    """
-    fz = _std_fryzigg(fryzigg)
-    check: dict[str, float] = {}
-    if afl is None or afl.empty:
-        combined = fz
-    else:
-        af = _std_afl(afl)
-        overlap = sorted(set(fz["season"]) & set(af["season"]))
-        keys = ["date", "team", "player_name"]
-        both = fz[fz["season"].isin(overlap)].merge(
-            af[af["season"].isin(overlap)], on=keys, suffixes=("_fz", "_afl")
-        )
-        n_afl_overlap = int(af["season"].isin(overlap).sum())
-        check = {
-            "overlap_seasons": overlap,
-            "afl_rows_matched": len(both) / max(n_afl_overlap, 1),
-            "rating_points_agree": float(
-                (both["rating_points_fz"] - both["rating_points_afl"]).abs().lt(0.05).mean()
-            ),
-            "metres_gained_agree": float(
-                (both["metres_gained_fz"] - both["metres_gained_afl"]).abs().lt(0.5).mean()
-            ),
-        }
-        id_map = both.drop_duplicates("player_key_afl").set_index("player_key_afl")["player_key_fz"]
-        later = af[~af["season"].isin(fz["season"].unique())].copy()
-        later["player_key"] = later["player_key"].map(id_map).fillna(later["player_key"])
-        check["later_players_mapped"] = (
-            float(later["player_key"].str.startswith("FZ").mean()) if len(later) else 1.0
-        )
-        combined = pd.concat([fz, later], ignore_index=True)
+    """One row per player per game, keyed to our game_id, with one player id across sources."""
+    combined, check = combine_player_sources(fryzigg, afl, PLAYER_STATS)
 
     linked = link_games(combined, matches, "home_team", "away_team")
     unlinked = len(combined) - len(linked)

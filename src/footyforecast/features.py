@@ -63,6 +63,38 @@ FEATURES = [
     "is_final",
 ]  # fmt: skip
 
+FEATURE_LABELS = {
+    "rating_diff": "Elo rating gap",
+    "hga_elo": "Home-ground advantage (Elo)",
+    "fam_diff": "Ground familiarity gap",
+    "travel_diff": "Travel gap",
+    "interstate_home": "Home side interstate",
+    "interstate_away": "Away side interstate",
+    "win5_diff": "Win rate, last 5 (gap)",
+    "margin5_diff": "Avg margin, last 5 (gap)",
+    "margin3_diff": "Avg margin, last 3 (gap)",
+    "rest_home": "Home rest days",
+    "rest_away": "Away rest days",
+    "short_break_home": "Home on short break",
+    "short_break_away": "Away on short break",
+    "rank_diff": "Ladder position gap",
+    "pct_log_ratio": "Ladder percentage ratio",
+    "h2h_win_rate": "Head-to-head win rate",
+    "h2h_margin": "Head-to-head margin",
+    "contested_possessions_form_diff": "Contested-ball dominance",
+    "clearances_form_diff": "Clearance dominance",
+    "inside_fifties_form_diff": "Inside-50 dominance",
+    "metres_gained_form_diff": "Metres-gained dominance",
+    "intercepts_form_diff": "Intercept dominance",
+    "tackles_form_diff": "Tackle dominance",
+    "rating_points_form_diff": "Player-ratings dominance",
+    "sel_rating_diff": "Selected-22 strength gap",
+    "sel_changes_home": "Home selection changes",
+    "sel_changes_away": "Away selection changes",
+    "sel_inexperienced_diff": "Inexperienced players gap",
+    "is_final": "Final",
+}
+
 
 # ---- Helpers -------------------------------------------------------------------------------
 def round_cutoffs(matches: pd.DataFrame) -> pd.Series:
