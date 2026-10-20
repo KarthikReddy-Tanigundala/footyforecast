@@ -7,8 +7,8 @@
 > archetypes with a "plays like" similarity tool.
 > Hybrid pipeline: R (fitzRoy) for data extraction, Python for everything else.
 
-**Status:** Phase 3 complete. Predictions, calibration, explanations, archetypes, similarity, 4-tab dashboard.
-Next: R home-ground-advantage report and weekly automation, then a live **2027 Squiggle entry**.
+**Status:** Phase 4 complete. Predictions, calibration, explanations, archetypes, similarity, 4-tab dashboard,
+R home-ground report, weekly refresh, docs. Next: deploy and a live **2027 Squiggle entry**.
 See [Roadmap](#-roadmap).
 
 | Asset | Link |
@@ -18,6 +18,8 @@ See [Roadmap](#-roadmap).
 | 📈 Calibration | [results/calibration_plot.png](results/calibration_plot.png) |
 | 🧠 Player archetypes | [results/cluster_viz.png](results/cluster_viz.png) |
 | 🔎 What drives the model (SHAP) | [results/shap_beeswarm.png](results/shap_beeswarm.png) |
+| 📐 R report: is home advantage real? | [results/home_ground_advantage.html](results/home_ground_advantage.html) |
+| 📚 Architecture · Methodology · ADRs | [ARCHITECTURE.md](ARCHITECTURE.md) · [METHODOLOGY.md](METHODOLOGY.md) · [docs/adr](docs/adr) |
 | 📡 Tips feed (Squiggle-ready) | [predictions/latest.json](predictions/latest.json) |
 
 ---
@@ -238,6 +240,7 @@ macOS/Linux: the same targets via `make setup`, `make all`, `make app`.
 | Re-pull data (needs R + `.env` with `FOOTY_CONTACT_EMAIL`) | `.\make.ps1 extract -Refresh` | ~8 min |
 | Re-tune Elo (grid + walk-forward schedule) | `.\make.ps1 tune` | ~2 min |
 | Refit the ML walk-forward (add `-Tune` to redo the 2014–16 grid) | `.\make.ps1 ml` | ~1 min (+5) |
+| Render the R report | `.\make.ps1 report` | ~1 min |
 | Re-cluster archetypes (needs raw player stats) / redraw SHAP plots | `.\make.ps1 archetypes`, `.\make.ps1 explain` | ~1 min / seconds |
 | Tests / lint | `.\make.ps1 test`, `.\make.ps1 lint` | seconds |
 
@@ -252,7 +255,7 @@ committed artefacts, so re-scoring is deterministic.
 - [x] **Phase 1, MVP:** R extract, name/venue normalisation, Elo from scratch, baselines, walk-forward backtest, leaderboard, dashboard, CI
 - [x] **Phase 2, ML + calibration:** 29 as-of pre-match features incl. team selection, walk-forward logistic/XGBoost/ridge, Platt + isotonic, reliability diagrams, bootstrap significance
 - [x] **Phase 3, archetypes + explanations:** 6 validated playing-style archetypes, "plays like" similarity tool, exact-SHAP plain-English reason for every tip, Archetypes and Similarity dashboard tabs
-- [ ] **Phase 4:** R Quarto report on home-ground advantage, weekly in-season refresh with official team selections, ARCHITECTURE/METHODOLOGY docs and ADRs
+- [x] **Phase 4:** R Quarto report on home-ground advantage (`lm` + `lme4`: ~7-point strength-adjusted edge, travel worth ~11 points for a 2,700 km trip, matching the Python Elo), weekly in-season refresh workflow, ARCHITECTURE/METHODOLOGY, 4 ADRs. Still to do: official team selections in the live feed
 - [ ] **Phase 5:** deploy to Streamlit Community Cloud, demo GIF, register for the **2027 Squiggle leaderboard**
 
 ## 📁 Repository layout

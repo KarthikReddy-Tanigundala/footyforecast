@@ -1,0 +1,165 @@
+---
+title: "Is home-ground advantage real, and how big is it?"
+subtitle: "An independent R check on the venue- and travel-aware Elo used by FootyForecast"
+author: "Karthik Reddy Tanigundala"
+date: today
+format:
+  html:
+    embed-resources: true
+    toc: true
+    code-fold: true
+    theme: cosmo
+execute:
+  warning: false
+  message: false
+---
+
+## Why this report exists
+
+FootyForecast's Elo gives the home side `base + w·(ground familiarity gap) + w·(travel gap)` Elo points,
+with weights tuned for prediction in Python. This report asks the question from the other side:
+**without looking at any Elo, how large is home advantage in AFL margins, and does it really depend on
+who is familiar with the ground and who has to travel?** It uses only R (tidyverse, `lm`, `lme4`),
+so it is an independent check, not a restatement of the Python model.
+
+```{r setup}
+library(nanoparquet); library(dplyr); library(tidyr); library(ggplot2)
+library(lme4); library(broom); library(scales)
+
+root <- if (file.exists("data/processed/matches.parquet")) "." else "../.."
+matches <- read_parquet(file.path(root, "data/processed/matches.parquet")) |> as_tibble()
+venues  <- read.csv(file.path(root, "data/reference/venues.csv"))
+bases   <- read.csv(file.path(root, "data/reference/team_bases.csv"))
+
+haversine <- function(lat1, lon1, lat2, lon2) {
+  r <- 6371; p <- pi / 180
+  a <- sin((lat2 - lat1) * p / 2)^2 + cos(lat1 * p) * cos(lat2 * p) * sin((lon2 - lon1) * p / 2)^2
+  2 * r * asin(sqrt(a))
+}
+
+d <- matches |>
+  filter(!is.na(margin), season >= 2000, !is_final) |>
+  left_join(venues |> select(venue, vlat = lat, vlon = lon), by = "venue") |>
+  left_join(bases |> select(team, hlat = lat, hlon = lon), by = c("home_team" = "team")) |>
+  left_join(bases |> select(team, alat = lat, alon = lon), by = c("away_team" = "team")) |>
+  mutate(
+    home_km = haversine(hlat, hlon, vlat, vlon),
+    away_km = haversine(alat, alon, vlat, vlon),
+    travel  = log1p(away_km) - log1p(home_km),
+    margin  = if_else(season == 2020, margin * 1.25, margin)   # 16-minute quarters
+  ) |>
+  filter(!is.na(travel))
+```
+
+The sample is **`r comma(nrow(d))` home-and-away games, 2000–2026** (finals excluded; 2020 margins scaled ×1.25
+for the shortened quarters).
+
+## 1. The raw edge
+
+```{r raw}
+raw <- d |> summarise(n = n(), mean_margin = mean(margin), sd = sd(margin),
+                      se = sd / sqrt(n), home_win_rate = mean(margin > 0) + 0.5 * mean(margin == 0))
+knitr::kable(raw, digits = 2)
+
+d |> group_by(season) |>
+  summarise(m = mean(margin), se = sd(margin) / sqrt(n())) |>
+  ggplot(aes(season, m)) +
+  geom_hline(yintercept = 0, colour = "grey70") +
+  geom_pointrange(aes(ymin = m - 1.96 * se, ymax = m + 1.96 * se), colour = "#2a78d6") +
+  labs(x = NULL, y = "Mean home margin (points), 95% CI", title = "Home teams have out-scored visitors almost every season") +
+  theme_minimal(base_size = 12)
+```
+
+The raw mean is a blend of true home advantage **and** the fact that the stronger side is sometimes at home
+more often, so it needs team strength adjusted out.
+
+## 2. Adjusting for team strength
+
+Each game is coded +1 for the home team-season and −1 for the away team-season (a Bradley–Terry-style
+design), so the intercept is the home advantage for a **neutral-strength matchup** and each team-season gets its
+own strength.
+
+```{r design}
+ts <- bind_rows(
+  d |> transmute(g = row_number(), ts = paste(home_team, season), x = 1),
+  d |> transmute(g = row_number(), ts = paste(away_team, season), x = -1)
+)
+X <- ts |> pivot_wider(names_from = ts, values_from = x, values_fill = 0) |> arrange(g) |> select(-g)
+dm <- bind_cols(d |> select(margin, venue, home_team, away_team, season, travel, away_km, home_km), X)
+strength_cols <- names(X)
+f_strength <- paste0("`", strength_cols[-1], "`", collapse = " + ")  # drop one for identifiability
+
+m_flat <- lm(as.formula(paste("margin ~", f_strength)), data = dm)
+hga_flat <- tidy(m_flat, conf.int = TRUE) |> filter(term == "(Intercept)")
+knitr::kable(hga_flat |> select(estimate, conf.low, conf.high), digits = 2,
+             caption = "Home advantage in points, strength-adjusted (neutral matchup)")
+```
+
+**Home advantage is about `r round(hga_flat$estimate, 1)` points** after adjusting for team strength
+(95% CI `r round(hga_flat$conf.low, 1)` to `r round(hga_flat$conf.high, 1)`).
+
+## 3. Does it depend on travel and familiarity?
+
+```{r travel}
+m_trav <- lm(as.formula(paste("margin ~ travel +", f_strength)), data = dm)
+tr <- tidy(m_trav, conf.int = TRUE) |> filter(term %in% c("(Intercept)", "travel"))
+knitr::kable(tr |> select(term, estimate, conf.low, conf.high, p.value), digits = 3)
+anova_trav <- anova(m_flat, m_trav)
+```
+
+`travel` is `log(1 + visitors' km) − log(1 + hosts' km)`. Adding it improves the fit
+(F-test p `r format.pval(anova_trav$"Pr(>F)"[2], digits = 2, eps = 1e-16)`): each extra unit of log-distance is worth
+`r round(tr$estimate[tr$term == "travel"], 2)` points, so a side flying 2,700 km against a host who walked to
+the ground (log-distance gap ≈ 7.9) is handed roughly
+`r round(tr$estimate[tr$term == "travel"] * 7.9, 1)` points on top of the base edge.
+**The Python Elo independently arrives at nearly the same number**: its travel weight (8 Elo points per unit of log-distance gap) times the same 7.9 gap is about 63 Elo points, which at 0.16 points per Elo point is roughly 10 points of margin.
+
+## 4. Do venues differ? A mixed model
+
+Treat each ground as a draw from a population of venues with its own random home advantage, so small samples
+at rarely-used grounds are shrunk towards the mean rather than over-read.
+
+```{r lmer, cache=FALSE}
+m_mixed <- lmer(
+  as.formula(paste("margin ~ travel +", f_strength, "+ (1 | venue)")),
+  data = dm, REML = TRUE, control = lmerControl(optimizer = "bobyqa")
+)
+vc <- as.data.frame(VarCorr(m_mixed))
+sd_venue <- vc$sdcor[vc$grp == "venue"]
+re <- ranef(m_mixed, condVar = TRUE)$venue
+venue_re <- tibble(venue = rownames(re), effect = re[["(Intercept)"]],
+                   se = sqrt(as.numeric(attr(re, "postVar")))) |>
+  left_join(dm |> count(venue, name = "games"), by = "venue") |>
+  filter(games >= 40) |>
+  mutate(venue = reorder(venue, effect))
+
+ggplot(venue_re, aes(effect, venue)) +
+  geom_vline(xintercept = 0, colour = "grey70") +
+  geom_pointrange(aes(xmin = effect - 1.96 * se, xmax = effect + 1.96 * se), colour = "#2a78d6") +
+  labs(x = "Extra home advantage at this ground (points), after travel and strength",
+       y = NULL, title = "Venue effects (grounds with 40+ games)",
+       subtitle = sprintf("Between-venue SD = %.1f points", sd_venue)) +
+  theme_minimal(base_size = 12)
+```
+
+The between-venue standard deviation is **`r round(sd_venue, 1)` points**, against a residual SD of
+`r round(sigma(m_mixed), 1)` points per game. Venue explains a small slice of margin variance but a real
+slice of *home advantage*: some grounds give hosts a bonus beyond travel alone, which is what the
+ground-familiarity term in the Elo is there to capture.
+
+## 5. What this means for the model
+
+| Question | Answer from R | Python Elo |
+|---|---|---|
+| Is home advantage real? | Yes: positive and clearly non-zero after strength adjustment | Base 10 + venue terms |
+| Does travel matter? | Yes: significant, positive coefficient on the log-distance gap | `hga_travel_w` > 0 in every tuning window |
+| Do grounds differ? | Yes: non-zero between-venue SD | Familiarity term |
+
+**Limitations.** Margins are noisy (SD ≈ 40 points), so single-venue estimates are wide. Team strength is a
+fixed effect per team-season, which absorbs within-season form changes. Travel is great-circle distance, not
+time zones, rest or the cost of a short break. Associations, not causes.
+
+```{r session}
+#| echo: false
+sessionInfo()$R.version$version.string
+```

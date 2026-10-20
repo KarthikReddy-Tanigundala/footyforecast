@@ -796,3 +796,11 @@ calibration: Platt alone gives Elo +14 bits). Market still clearly ahead (−48 
 **Phase-3 result:** 7,049 player-seasons → 6 archetypes; ARI 0.35 / NMI 0.48 vs named positions; Ruck
 90% pure / 96% recall, Inside Midfielder 70% / 83%, Key Forward recall 75%; 27% hybrids. SHAP top drivers
 agree across logistic and XGBoost (Elo gap, inside-50 dominance, ladder %, selected-22 strength).
+
+### 17.3 Phase 4 decisions (2026-10-20)
+
+| # | Decision | Why |
+|---|---|---|
+| 29 | R report fits strength via +1/-1 team-season design (Bradley-Terry style) with `lm`, then `lme4` `(1 \| venue)` | Independent of the Python Elo; result: HGA ~7.0 pts [6.0, 7.9], travel 1.41 pts per log-km unit (~11 pts for 2,700 km), between-venue SD 3.0 pts |
+| 30 | `refresh.yml`: Tue 22:00 + Thu 02:00 UTC, Mar-Oct only, incremental extract, commits data/results/predictions | Idempotent; Thursday run follows team selection |
+| 31 | Weekly job cannot refresh raw player stats (gitignored); new games use each team's last line-up | Documented limitation; official selections are future work |
