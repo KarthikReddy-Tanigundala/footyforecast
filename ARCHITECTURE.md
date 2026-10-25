@@ -36,7 +36,7 @@ flowchart LR
 4. **Reproducible offline.** Match-level raw data and every derived table the scoring needs are committed;
    CI rebuilds them and fails if the leaderboard changes.
 5. **The deployed app stays light.** `footyforecast.style` and `similarity` import only pandas and NumPy, so
-   Streamlit Cloud installs `app/requirements.txt` (no scikit-learn, XGBoost, SHAP or UMAP).
+   Streamlit Cloud installs the lean root `requirements.txt` (no scikit-learn, XGBoost, SHAP or UMAP); development uses `requirements-dev.txt`.
 
 ## Layers
 

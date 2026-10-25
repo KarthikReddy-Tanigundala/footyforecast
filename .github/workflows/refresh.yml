@@ -59,11 +59,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          cache-dependency-path: requirements-dev.txt
 
       - name: Install Python
         if: steps.season.outputs.run == 'true'
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
           pip install -e .
 
       - name: Incremental extract (current season only)

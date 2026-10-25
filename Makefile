@@ -8,7 +8,7 @@ help:      ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  %-10s %s\n", $$1, $$2}'
 
 setup:     ## Create venv + install Python deps (editable)
-	$(PY) -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt && pip install -e .
+	$(PY) -m venv .venv && . .venv/bin/activate && pip install -r requirements-dev.txt && pip install -e .
 
 r-setup:   ## Initialise renv + pinned R deps
 	$(RSCRIPT) R/setup_renv.R

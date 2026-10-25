@@ -60,7 +60,7 @@ $Quarto  = { Find-Tool 'quarto'  @('C:\Program Files\Quarto\bin\quarto.exe',
                                    'C:\Program Files\RStudio\resources\app\bin\quarto\bin\quarto.exe') }
 
 switch ($Target) {
-    'setup'    { python -m venv .venv; Invoke-Checked $Py @('-m', 'pip', 'install', '-r', 'requirements.txt'); Invoke-Checked $Py @('-m', 'pip', 'install', '-e', '.') }
+    'setup'    { python -m venv .venv; Invoke-Checked $Py @('-m', 'pip', 'install', '-r', 'requirements-dev.txt'); Invoke-Checked $Py @('-m', 'pip', 'install', '-e', '.') }
     'r-setup'  { Invoke-Checked (& $Rscript) @('R/setup_renv.R') }
     'extract'  { $a = @('R/extract_data.R'); if ($Refresh) { $a += '--refresh' }; Invoke-Checked (& $Rscript) $a }
     'refresh'  { Invoke-Checked (& $Rscript) @('R/extract_data.R', '--incremental') }

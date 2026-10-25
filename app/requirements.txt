@@ -1,7 +1,0 @@
-# Lean runtime for the deployed dashboard (Streamlit Community Cloud reads this file first).
-# The app only reads committed artefacts, so no xgboost/shap/umap are needed at runtime.
-streamlit>=1.66,<1.67
-pandas>=3.0,<3.1
-numpy>=2.5,<2.6
-pyarrow>=26,<27
-plotly>=7.1,<7.2
