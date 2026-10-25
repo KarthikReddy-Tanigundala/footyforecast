@@ -13,7 +13,7 @@ See [Roadmap](#-roadmap).
 
 | Asset | Link |
 |---|---|
-| 🏉 Dashboard (Streamlit, 4 tabs) | _deploying: run locally with `.\make.ps1 app`_ |
+| 🏉 Live dashboard (Streamlit, 4 tabs) | [best-footyforecast-victoria.streamlit.app](https://best-footyforecast-victoria.streamlit.app/) |
 | 🏆 FootyForecast vs the field | [results/leaderboard.md](results/leaderboard.md) |
 | 📈 Calibration | [results/calibration_plot.png](results/calibration_plot.png) |
 | 🧠 Player archetypes | [results/cluster_viz.png](results/cluster_viz.png) |
