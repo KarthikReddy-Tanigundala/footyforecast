@@ -35,7 +35,7 @@ jobs:
         id: season
         run: |
           m=$(date -u +%-m)
-          if [ "${{ inputs.force }}" = "true" ] || { [ "$m" -ge 3 ] && [ "$m" -le 10 ]; }; then
+          if [ "${{ inputs.force }}" = "true" ] || { [ "$m" -ge 3 ] && [ "$m" -le 9 ]; }; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "Off-season (month $m): nothing to do."
